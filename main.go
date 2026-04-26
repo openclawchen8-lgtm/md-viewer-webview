@@ -321,6 +321,10 @@ const htmlTemplate = `<!DOCTYPE html>
   };
   window.hideSettingsPanel = function() {
     var el = document.getElementById('settingsOverlay');
+    if (el) { el.style.display = 'none'; }
+  };
+  window.toggleSettingsPanel = function() {
+    var el = document.getElementById('settingsOverlay');
     if (el) { el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'flex' : 'none'; }
   };
 
@@ -352,7 +356,7 @@ const htmlTemplate = `<!DOCTYPE html>
         else { e.preventDefault(); window.reloadFile(); }
         break;
       case 's': case 'S':
-        if (!e.ctrlKey) { e.preventDefault(); window.hideSettingsPanel && window.hideSettingsPanel(); }
+        if (!e.ctrlKey) { e.preventDefault(); window.toggleSettingsPanel && window.toggleSettingsPanel(); }
         break;
     }
   });
@@ -392,11 +396,19 @@ const htmlTemplate = `<!DOCTYPE html>
     el.textContent = pct + '%';
     el.style.opacity = '1';
     clearTimeout(window._zoomTimer);
+    clearTimeout(window._zoomTimer);
     window._zoomTimer = setTimeout(function(){ el.style.opacity = '0'; }, 1500);
     // Update persistent zoom display in keyboard hint bar (always show current %)
+    // NOTE: do NOT touch keyboardHint here — it was already set during init
+    // and each zoom call re-triggers showZoomIndicator anyway
     var kh = document.getElementById('keyboardHint');
     if (kh) kh.textContent = pct + '% | ⌘O Open | ⇧⌘R Reset | ⌘+/⌘- Zoom | ⌘S | ⌘Q Quit';
   }
+  // Init keyboardHint: show initial zoom level from config
+  var _cfg = window._initConfig || window.mdConfig;
+  var _initZoom = (_cfg && _cfg.zoomLevel) ? Math.round(_cfg.zoomLevel * 100) : 100;
+  var kh = document.getElementById('keyboardHint');
+  if (kh) kh.textContent = _initZoom + '% | ⌘O Open | ⇧⌘R Reset | ⌘+/⌘- Zoom | ⌘S | ⌘Q Quit';
 })();
   // Settings panel — showSettingsPanel/hideSettingsPanel already exposed in IIFE above
   // Only rebind event listeners here (safe to call multiple times)
@@ -539,7 +551,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "[MENU] callback fired: menuID=%d\n", menuID)
 		switch menuID {
 		case MenuPreferences:
-			wv.Eval("var _el=document.getElementById('settingsOverlay');if(_el){_el.style.display='flex';document.title='SETTINGS-OPENED';}else{document.title='NO-OVERLAY-ELEM';}")
+			wv.Eval("window.toggleSettingsPanel && window.toggleSettingsPanel()")
 		case MenuOpen:
 			wv.Dispatch(func() { openFile() })
 		case MenuReload:
