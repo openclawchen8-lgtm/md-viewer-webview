@@ -404,10 +404,14 @@ document.addEventListener('DOMContentLoaded', function() {
   if (_cfg) {
     window.mdConfig = _cfg; // ensure mdConfig is available
     window.applyZoomSensitivity(_cfg.zoomSensitivity || 2);
-    window.applyZoomLevel(_cfg.zoomLevel || 1.0);
+    if (_cfg.zoomLevel && _cfg.zoomLevel !== 1) {
+      window.applyZoomLevel(_cfg.zoomLevel);
+    } else {
+      window.showZoomIndicator(100);
+    }
   } else {
     window.applyZoomSensitivity(2);
-    window.applyZoomLevel(1.0);
+    window.showZoomIndicator(100);
   }
 });
   var zoomSlider = document.getElementById('zoomSensitivity');
