@@ -42,7 +42,7 @@ func configPath() (string, error) {
 
 func defaultConfig() Config {
 	return Config{
-		ZoomSensitivity: 2,
+		ZoomSensitivity: 5,
 		Theme:           "auto",
 		ZoomLevel:       1.0,
 		FontFamily:      "-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif",

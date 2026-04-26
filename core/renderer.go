@@ -1,47 +1,36 @@
 package core
 
-import (
-	"bytes"
+/*
+#cgo LDFLAGS: -L../.build/release -lMarkdownEngine -Wl,-rpath,./
+#include <stdlib.h>
 
-	"github.com/yuin/goldmark"
-	"github.com/yuin/goldmark/extension"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/renderer/html"
+extern char* render_markdown_to_html(const char* input);
+*/
+import "C"
+import (
+	"errors"
+	"unsafe"
 )
 
-// MarkdownRenderer wraps goldmark with full GFM support.
+// MarkdownRenderer wraps the Swift-based markdown engine.
 type MarkdownRenderer struct {
-	md goldmark.Markdown
 }
 
 // NewMarkdownRenderer creates a new MarkdownRenderer.
 func NewMarkdownRenderer() *MarkdownRenderer {
-	return &MarkdownRenderer{
-		md: goldmark.New(
-			goldmark.WithExtensions(
-				extension.GFM,
-				extension.Table,
-				extension.Strikethrough,
-				extension.Linkify,
-				extension.TaskList,
-				extension.DefinitionList,
-			),
-			goldmark.WithParserOptions(
-				parser.WithAutoHeadingID(),
-			),
-			goldmark.WithRendererOptions(
-				html.WithHardWraps(),
-				html.WithXHTML(),
-			),
-		),
-	}
+	return &MarkdownRenderer{}
 }
 
-// Render converts markdown to HTML.
+// Render converts markdown to HTML using swift-markdown via FFI.
 func (r *MarkdownRenderer) Render(content string) (string, error) {
-	var buf bytes.Buffer
-	if err := r.md.Convert([]byte(content), &buf); err != nil {
-		return "", err
+	cContent := C.CString(content)
+	defer C.free(unsafe.Pointer(cContent))
+
+	cResult := C.render_markdown_to_html(cContent)
+	if cResult == nil {
+		return "", errors.New("swift-markdown rendering failed")
 	}
-	return buf.String(), nil
+	defer C.free(unsafe.Pointer(cResult))
+
+	return C.GoString(cResult), nil
 }

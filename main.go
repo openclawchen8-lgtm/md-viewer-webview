@@ -13,7 +13,7 @@ import (
 )
 
 const cssContent = `
-:root {
+:root, [data-theme='light'] {
   --color-canvas-default: #ffffff;
   --color-canvas-subtle: #f6f8fa;
   --color-fg-default: #1f2328;
@@ -24,8 +24,52 @@ const cssContent = `
   --color-danger-fg: #d1242f;
   --color-success-fg: #1a7f37;
 }
+[data-theme='dark'] {
+  --color-canvas-default: #0d1117;
+  --color-canvas-subtle: #161b22;
+  --color-fg-default: #e6edf3;
+  --color-fg-muted: #8b949e;
+  --color-border-default: #30363d;
+  --color-accent-fg: #58a6ff;
+  --color-accent-emphasis: #388bfd;
+  --color-danger-fg: #f85149;
+  --color-success-fg: #3fb950;
+}
+[data-theme='sepia'] {
+  --color-canvas-default: #f4ecd8;
+  --color-canvas-subtle: #eaddc0;
+  --color-fg-default: #5b4636;
+  --color-fg-muted: #7d6b5d;
+  --color-border-default: #d3c4a9;
+  --color-accent-fg: #a65d00;
+  --color-accent-emphasis: #874b00;
+  --color-danger-fg: #d1242f;
+  --color-success-fg: #1a7f37;
+}
+[data-theme='solarized'] {
+  --color-canvas-default: #002b36;
+  --color-canvas-subtle: #073642;
+  --color-fg-default: #839496;
+  --color-fg-muted: #586e75;
+  --color-border-default: #073642;
+  --color-accent-fg: #268bd2;
+  --color-accent-emphasis: #2aa198;
+  --color-danger-fg: #dc322f;
+  --color-success-fg: #859900;
+}
+[data-theme='nord'] {
+  --color-canvas-default: #2e3440;
+  --color-canvas-subtle: #3b4252;
+  --color-fg-default: #d8dee9;
+  --color-fg-muted: #949fb1;
+  --color-border-default: #434c5e;
+  --color-accent-fg: #88c0d0;
+  --color-accent-emphasis: #81a1c1;
+  --color-danger-fg: #bf616a;
+  --color-success-fg: #a3be8c;
+}
 @media (prefers-color-scheme: dark) {
-  :root {
+  [data-theme='auto'] {
     --color-canvas-default: #0d1117;
     --color-canvas-subtle: #161b22;
     --color-fg-default: #e6edf3;
@@ -149,12 +193,15 @@ const htmlTemplate = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" id="hljsLight">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" id="hljsDark" disabled>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <style>%s</style>
 </head>
-<body>
+<body data-theme="auto">
 <div class="drop-zone" id="dropZone"><div class="drop-zone-msg">Drop .md file here</div></div>
 <div class="markdown-body" id="mdContent">%s</div>
-<div class="keyboard-hint" id="keyboardHint">⌘O Open | ⇧⌘R Reset | ⌘+/⌘- Zoom | ⌘S | ⌘Q Quit</div>
+<div class="keyboard-hint" id="keyboardHint"><span id="zoomText" style="font-weight:700; color:var(--color-fg-default); margin-right:4px;">100%%</span> | ⌘O Open | ⌘R Reload | ⌘+/- Zoom | ⇧⌘R/⌘0 Reset | ⌘, Settings | ⌘Q Quit</div>
 <div class="settings-overlay" id="settingsOverlay" style="display:none">
   <div class="settings-panel">
     <div class="settings-title">
@@ -162,9 +209,20 @@ const htmlTemplate = `<!DOCTYPE html>
       <button class="settings-close" id="settingsClose" title="關閉 (Esc)">×</button>
     </div>
     <div class="setting-row">
+      <div class="setting-label">佈景主題</div>
+      <select id="themeSelect" style="width:100%;padding:6px;border-radius:6px;border:1px solid var(--color-border-default);background:var(--color-canvas-default);color:var(--color-fg-default);">
+        <option value="auto">跟隨系統 (Auto)</option>
+        <option value="light">GitHub 淺色</option>
+        <option value="dark">GitHub 深色</option>
+        <option value="sepia">羊皮紙 (Sepia)</option>
+        <option value="solarized">Solarized 深色</option>
+        <option value="nord">Nord 極地</option>
+      </select>
+    </div>
+    <div class="setting-row">
       <div class="setting-label">縮放靈敏度</div>
       <div class="setting-desc">控制 ⌘+ 和 ⌘- 每次調整的幅度</div>
-      <input type="range" id="zoomSensitivity" min="1" max="3" value="2" step="1">
+      <input type="range" id="zoomSensitivity" min="1" max="10" value="5" step="1">
       <div class="slider-labels"><span>低</span><span>中</span><span>高</span></div>
     </div>
     <div class="setting-row">
@@ -211,11 +269,9 @@ window.applyZoomLevel = function(level) {
   window.showZoomIndicator(Math.round(level * 100));
 };
 window.showZoomIndicator = function(pct) {
-  // Always update keyboardHint first (the persistent bar at bottom)
-  var kh = document.getElementById('keyboardHint');
-  if (kh) {
-    kh.textContent = pct + '% | ⌘O Open | ⇧⌘R Reset | ⌘+/⌘- Zoom | ⌘S | ⌘Q Quit';
-  }
+  // Update zoom text span (avoids Go fmt %% escaping issue)
+  var zt = document.getElementById('zoomText');
+  if (zt) zt.textContent = pct + '%';
   // Floating indicator (fades out after 1.5s)
   var el = document.getElementById('zoomIndicator');
   if (!el) {
@@ -230,6 +286,52 @@ window.showZoomIndicator = function(pct) {
     clearTimeout(window._zoomTimer);
     window._zoomTimer = setTimeout(function(){ el.style.opacity = '0'; }, 1500);
   }
+};
+window.applyTheme = function(theme) {
+  document.body.setAttribute('data-theme', theme || 'auto');
+  // Switch highlight.js theme
+  var isDark = theme === 'dark' || theme === 'solarized' || theme === 'nord';
+  if (theme === 'auto') {
+    isDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+  var lightLink = document.getElementById('hljsLight');
+  var darkLink = document.getElementById('hljsDark');
+  if (lightLink && darkLink) {
+    lightLink.disabled = isDark;
+    darkLink.disabled = !isDark;
+  }
+  if (window.hljs) hljs.highlightAll();
+};
+window.applyLanguage = function(lang) {
+  var translations = {
+    'zhTW': { 'settings': '設定', 'theme': '佈景主題', 'zoom': '縮放靈敏度', 'zoomDesc': '控制 ⌘+ 和 ⌘- 每次調整的幅度', 'low': '低', 'mid': '中', 'high': '高', 'font': '字型', 'fontSize': '字型大小', 'lang': '語言 / Language', 'drop': '拖放 .md 檔案到此', 'noFile': '未載入檔案', 'hint': '按 ⌘O 開啟 Markdown 檔案' },
+    'zhCN': { 'settings': '设置', 'theme': '佈景主题', 'zoom': '缩放灵敏度', 'zoomDesc': '控制 ⌘+ 和 ⌘- 每次调整的幅度', 'low': '低', 'mid': '中', 'high': '高', 'font': '字体', 'fontSize': '字体大小', 'lang': '语言 / Language', 'drop': '拖放 .md 文件到此', 'noFile': '未加载文件', 'hint': '按 ⌘O 打开 Markdown 文件' },
+    'en':   { 'settings': 'Settings', 'theme': 'Theme', 'zoom': 'Zoom Sensitivity', 'zoomDesc': 'Control how much ⌘+/- zooms', 'low': 'Low', 'mid': 'Mid', 'high': 'High', 'font': 'Font Family', 'fontSize': 'Font Size', 'lang': 'Language', 'drop': 'Drop .md file here', 'noFile': 'No file loaded', 'hint': 'Press ⌘O to open a Markdown file' },
+    'ja':   { 'settings': '設定', 'theme': 'テーマ', 'zoom': 'ズーム感度', 'zoomDesc': '⌘+/- の調整幅を制御します', 'low': '低', 'mid': '中', 'high': '高', 'font': 'フォント', 'fontSize': 'フォントサイズ', 'lang': '言語 / Language', 'drop': '.md ファイルをここにドロップ', 'noFile': 'ファイルが読み込まれていません', 'hint': '⌘O を押して Markdown ファイルを開く' },
+    'ko':   { 'settings': '설정', 'theme': '테마', 'zoom': '확대/축소 민감도', 'zoomDesc': '⌘+/- 확대/축소 정도를 조절합니다', 'low': '낮음', 'mid': '중간', 'high': '높음', 'font': '글꼴', 'fontSize': '글꼴 크기', 'lang': '언어 / Language', 'drop': '.md 파일을 여기에 드롭', 'noFile': '파일이 로드되지 않음', 'hint': '⌘O를 눌러 Markdown 파일을 엽니다' }
+  };
+  var t = translations[lang] || translations['en'];
+  // Settings panel
+  var sTitle = document.querySelector('.settings-title'); if (sTitle) sTitle.firstChild.textContent = t.settings + ' ';
+  var labels = document.querySelectorAll('.setting-label');
+  if (labels.length >= 5) {
+    labels[0].textContent = t.theme;
+    labels[1].textContent = t.zoom;
+    labels[2].textContent = t.font;
+    labels[3].textContent = t.fontSize;
+    labels[4].textContent = t.lang;
+  }
+  var zoomDesc = document.querySelector('.setting-desc'); if (zoomDesc) zoomDesc.textContent = t.zoomDesc;
+  var sliderLabels = document.querySelectorAll('.slider-labels span');
+  if (sliderLabels.length >= 3) {
+    sliderLabels[0].textContent = t.low;
+    sliderLabels[1].textContent = t.mid;
+    sliderLabels[2].textContent = t.high;
+  }
+  // Empty state & Drop zone
+  var dzMsg = document.querySelector('.drop-zone-msg'); if (dzMsg) dzMsg.textContent = t.drop;
+  var esTitle = document.querySelector('.empty-state-title'); if (esTitle) esTitle.textContent = t.noFile;
+  var esHint = document.querySelector('.empty-state div:last-child'); if (esHint) esHint.textContent = t.hint;
 };
 window.showSettingsPanel = function() {
   // Delegate to toggle (opens if closed)
@@ -249,17 +351,12 @@ window.toggleSettingsPanel = function() {
     el.style.display = wasHidden ? 'flex' : 'none';
     // When opening, sync values with config
     if (wasHidden) {
-      // Log debug info
-      var dbg = document.getElementById('_dbg3');
-      if (!dbg) { dbg = document.createElement('div'); dbg.id = '_dbg3'; dbg.style.cssText = 'position:fixed;bottom:40px;left:0;background:#f0f;color:#fff;z-index:999999;font-size:10px;padding:4px;'; document.body.appendChild(dbg); }
-      
       // Try to get fresh config from Go
       var cfg = window.mdConfig || window._initConfig;
-      dbg.innerHTML = 'mdConfig: ' + JSON.stringify(cfg) + '<br>_initConfig: ' + JSON.stringify(window._initConfig);
       
       var slider = document.getElementById('zoomSensitivity');
       if (slider && cfg) {
-        var targetVal = cfg.zoomSensitivity || 2;
+        var targetVal = cfg.zoomSensitivity || 5;
         slider.value = targetVal;
         slider.setAttribute('value', targetVal);
         // WebKit workaround: remove and re-add to force repaint
@@ -269,15 +366,15 @@ window.toggleSettingsPanel = function() {
           parent.removeChild(slider);
           parent.insertBefore(slider, next);
         }
-        dbg.innerHTML += '<br>zoomSensitivity set to: ' + slider.value + ' (from config: ' + cfg.zoomSensitivity + ')';
       }
+      var ts = document.getElementById('themeSelect');
+      if (ts && cfg) ts.value = cfg.theme || 'auto';
       var ff = document.getElementById('fontFamily');
       if (ff && cfg) {
         var curr = cfg.fontFamily || '';
-        dbg.innerHTML += '<br>fontFamily from cfg: ' + curr;
         var opts = ff.options;
         for (var i = 0; i < opts.length; i++) {
-          if (curr.indexOf(opts[i].value) !== -1) { ff.selectedIndex = i; dbg.innerHTML += '<br>matched: ' + opts[i].value; break; }
+          if (curr.indexOf(opts[i].value) !== -1) { ff.selectedIndex = i; break; }
         }
       }
       var fs = document.getElementById('fontSize');
@@ -288,7 +385,7 @@ window.toggleSettingsPanel = function() {
   }
 };
 window.applyZoomSensitivity = function(level) {
-  window.zoomState.step = [0, 0.05, 0.10, 0.20][level] || 0.10;
+  window.zoomState.step = 0.02 * level;
 };
 window.zoomIn = function() { window.applyZoomLevel(window.zoomState.level + window.zoomState.step); };
 window.zoomOut = function() { window.applyZoomLevel(window.zoomState.level - window.zoomState.step); };
@@ -393,8 +490,8 @@ document.addEventListener('DOMContentLoaded', function() {
         if (e.shiftKey) { e.preventDefault(); window.zoomReset(); }
         else { e.preventDefault(); window.reloadFile(); }
         break;
-      case 's': case 'S':
-        if (!e.ctrlKey) { e.preventDefault(); window.toggleSettingsPanel && window.toggleSettingsPanel(); }
+      case ',':
+        e.preventDefault(); window.toggleSettingsPanel && window.toggleSettingsPanel();
         break;
     }
   });
@@ -403,13 +500,27 @@ document.addEventListener('DOMContentLoaded', function() {
   var _cfg = window._initConfig || window.mdConfig;
   if (_cfg) {
     window.mdConfig = _cfg; // ensure mdConfig is available
-    window.applyZoomSensitivity(_cfg.zoomSensitivity || 2);
+    window.applyZoomSensitivity(_cfg.zoomSensitivity || 5);
     window.applyZoomLevel(_cfg.zoomLevel || 1.0);
+    window.applyTheme(_cfg.theme || 'auto');
+    window.applyLanguage(_cfg.language || 'zhTW');
   } else {
-    window.applyZoomSensitivity(2);
+    window.applyZoomSensitivity(5);
     window.applyZoomLevel(1.0);
+    window.applyTheme('auto');
+    window.applyLanguage('zhTW');
   }
+  if (window.hljs) hljs.highlightAll();
 });
+  var themeSelect = document.getElementById('themeSelect');
+  if (themeSelect) {
+    themeSelect.addEventListener('change', function() {
+      var val = this.value;
+      window.applyTheme(val);
+      if (window.saveTheme) window.saveTheme(val);
+      if (window.mdConfig) window.mdConfig.theme = val;
+    });
+  }
   var zoomSlider = document.getElementById('zoomSensitivity');
   if (zoomSlider) {
     zoomSlider.addEventListener('input', function() {
@@ -461,6 +572,36 @@ document.addEventListener('DOMContentLoaded', function() {
   });
   var closeBtn = document.getElementById('settingsClose');
   if (closeBtn) closeBtn.addEventListener('click', window.hideSettingsPanel);
+
+  // Intercept all link clicks and handle appropriately
+  document.addEventListener('click', function(e) {
+    var target = e.target;
+    while (target && target.tagName !== 'A') {
+      target = target.parentNode;
+    }
+    if (target && target.tagName === 'A') {
+      var href = target.getAttribute('href');
+      if (!href || href.startsWith('#')) return;
+
+      if (href.startsWith('http://') || href.startsWith('https://')) {
+        e.preventDefault();
+        if (window.openExternal) window.openExternal(target.href);
+      } else if (href.startsWith('file://')) {
+        e.preventDefault();
+        var path = decodeURIComponent(href.replace('file://', ''));
+        // If it's a markdown file, open it in-app, otherwise use system
+        if (path.toLowerCase().endsWith('.md') || path.toLowerCase().endsWith('.markdown')) {
+          if (window.openFileByPath) window.openFileByPath(path);
+        } else {
+          if (window.openExternal) window.openExternal(href);
+        }
+      } else if (!href.includes('://')) {
+        // Likely a relative local link
+        e.preventDefault();
+        if (window.handleRelativeLink) window.handleRelativeLink(href);
+      }
+    }
+  });
 </script>
 </body>
 </html>`
@@ -469,30 +610,37 @@ var (
 	currentWV   webview.WebView
 	renderer     *core.MarkdownRenderer
 	currentFile  string
+	wv           webview.WebView
 )
+
+func prepareHTML(html string) string {
+	// Inject config directly into HTML so IIFE can read it immediately
+	html = strings.Replace(html, "</head>", fmt.Sprintf(`<script>window._initConfig=%s;</script></head>`, ConfigToJS()), 1)
+	// Set theme directly on body to avoid flash/revert bug
+	theme := currentConfig.Theme
+	if theme == "" {
+		theme = "auto"
+	}
+	html = strings.Replace(html, `data-theme="auto"`, fmt.Sprintf(`data-theme=%q`, theme), 1)
+	return html
+}
 
 func renderMD(md string) string {
 	html, err := renderer.Render(md)
 	if err != nil {
-		result := fmt.Sprintf(htmlTemplate, cssContent, fmt.Sprintf(`<div class="error"><strong>Error:</strong> %s</div>`, err.Error()))
-		result = strings.Replace(result, "</head>", fmt.Sprintf(`<script>window._initConfig=%s;</script></head>`, ConfigToJS()), 1)
-		return result
+		return renderError(err.Error())
 	}
-	result := fmt.Sprintf(htmlTemplate, cssContent, html)
-	// Inject config directly into HTML so IIFE can read it immediately
-	result = strings.Replace(result, "</head>", fmt.Sprintf(`<script>window._initConfig=%s;</script></head>`, ConfigToJS()), 1)
-	return result
+	return prepareHTML(fmt.Sprintf(htmlTemplate, cssContent, html))
 }
 
 func renderEmpty() string {
-	html := fmt.Sprintf(htmlTemplate, cssContent, `<div class="empty-state"><div class="empty-state-icon">📄</div><div class="empty-state-title">No file loaded</div><div>Press ⌘O to open a Markdown file</div></div>`)
-	// Inject config directly into HTML so IIFE can read it immediately
-	html = strings.Replace(html, "</head>", fmt.Sprintf(`<script>window._initConfig=%s;</script></head>`, ConfigToJS()), 1)
-	return html
+	content := `<div class="empty-state"><div class="empty-state-icon">📄</div><div class="empty-state-title">No file loaded</div><div>Press ⌘O to open a Markdown file</div></div>`
+	return prepareHTML(fmt.Sprintf(htmlTemplate, cssContent, content))
 }
 
 func renderError(msg string) string {
-	return fmt.Sprintf(htmlTemplate, cssContent, fmt.Sprintf(`<div class="error"><strong>Error:</strong> %s</div>`, msg))
+	content := fmt.Sprintf(`<div class="error"><strong>Error:</strong> %s</div>`, msg)
+	return prepareHTML(fmt.Sprintf(htmlTemplate, cssContent, content))
 }
 
 // getConfigJS returns the config JS snippet (call after LoadConfig)
@@ -510,20 +658,38 @@ func openFile() {
 }
 
 func loadFile(path string) {
-	data, err := os.ReadFile(path)
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		absPath = path
+	}
+
+	data, err := os.ReadFile(absPath)
 	if err != nil {
 		if currentWV != nil {
 			currentWV.SetHtml(renderError("Cannot read: " + err.Error()))
 		}
 		return
 	}
-	currentFile = path
-	if currentWV != nil {
-		currentWV.SetTitle(filepath.Base(path) + " - md-viewer")
-		currentWV.SetHtml(renderMD(string(data)))
-		// Restore zoom level after HTML is rendered (use Go currentConfig directly)
-		currentWV.Eval(fmt.Sprintf("window.mdConfig = {zoomSensitivity: %d, zoomLevel: %f, fontFamily: %q, fontSize: %d, language: %q}; if(window.applyZoomLevel) window.applyZoomLevel(%f);", currentConfig.ZoomSensitivity, currentConfig.ZoomLevel, currentConfig.FontFamily, currentConfig.FontSize, currentConfig.Language, currentConfig.ZoomLevel))
+
+	currentFile = absPath
+	if currentWV == nil {
+		return
 	}
+
+	currentWV.SetTitle(filepath.Base(absPath) + " - md-viewer")
+	
+	if len(data) > 500*1024 {
+		currentWV.SetHtml(prepareHTML(`<div class="empty-state"><div class="empty-state-icon">⏳</div><div class="empty-state-title">Rendering Large File...</div><div>Please wait while we process the content.</div></div>`))
+	}
+
+	go func(content string) {
+		htmlOutput := renderMD(content)
+		currentWV.Dispatch(func() {
+			if currentWV != nil {
+				currentWV.SetHtml(htmlOutput)
+			}
+		})
+	}(string(data))
 }
 
 func reloadFile() {
@@ -538,6 +704,7 @@ func main() {
 	if err := LoadConfig(); err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to load config:", err)
 	}
+	UpdateMenuLanguage(currentConfig.Language)
 
 	if len(os.Args) > 1 {
 		currentFile = os.Args[1]
@@ -548,7 +715,7 @@ func main() {
 		title = filepath.Base(currentFile) + " - md-viewer"
 	}
 
-	wv := webview.New(true)
+	wv = webview.New(true)
 	if wv == nil {
 		fmt.Fprintln(os.Stderr, "Failed to create webview")
 		os.Exit(1)
@@ -579,6 +746,11 @@ func main() {
 	wv.SetTitle(title)
 	wv.SetSize(1200, 800, webview.HintNone)
 
+	// Handle macOS double-click / open file events
+	RegisterOpenFileCallback(func(path string) {
+		wv.Dispatch(func() { loadFile(path) })
+	})
+
 	// Enable native macOS drag & drop (for intra-app drags; Finder→App uses JS HTML5 drop)
 	RegisterDragDropCallback(func(path string) {
 		wv.Dispatch(func() { loadFile(path) })
@@ -595,6 +767,17 @@ func main() {
 	wv.Bind("reloadFile", func() { wv.Dispatch(func(){ reloadFile() }) })
 	wv.Bind("openFileByPath", func(path string) {
 		wv.Dispatch(func() { loadFile(path) })
+	})
+	wv.Bind("openExternal", func(url string) {
+		exec.Command("open", url).Run()
+	})
+	wv.Bind("handleRelativeLink", func(relPath string) {
+		if currentFile == "" || strings.HasPrefix(currentFile, "(dragged)") {
+			return
+		}
+		baseDir := filepath.Dir(currentFile)
+		absPath := filepath.Join(baseDir, relPath)
+		wv.Dispatch(func() { loadFile(absPath) })
 	})
 	wv.Bind("loadFileContent", func(filename, content string) {
 		currentFile = "(dragged): " + filename
@@ -613,6 +796,11 @@ func main() {
 			fmt.Fprintln(os.Stderr, "Failed to save zoom level:", err)
 		}
 	})
+	wv.Bind("saveTheme", func(theme string) {
+		if err := SetTheme(theme); err != nil {
+			fmt.Fprintln(os.Stderr, "Failed to save theme:", err)
+		}
+	})
 	wv.Bind("saveFont", func(family string, size int) {
 		if err := SetFont(family, size); err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to save font:", err)
@@ -622,6 +810,7 @@ func main() {
 		if err := SetLanguage(lang); err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to save language:", err)
 		} else {
+			UpdateMenuLanguage(lang)
 			wv.Eval(getConfigJS())
 		}
 	})

@@ -32,12 +32,25 @@ const (
 )
 
 var menuCallback func(int)
+var openFileCallback func(string)
 
 //export goMenuCallback
 func goMenuCallback(menuID C.int) {
 	if menuCallback != nil {
 		menuCallback(int(menuID))
 	}
+}
+
+//export goOpenFileCallback
+func goOpenFileCallback(path *C.char) {
+	if openFileCallback != nil {
+		openFileCallback(C.GoString(path))
+	}
+}
+
+// RegisterOpenFileCallback registers a callback for macOS "Open File" events.
+func RegisterOpenFileCallback(callback func(string)) {
+	openFileCallback = callback
 }
 
 // SetupMenu registers a callback for menu item clicks and sets up the native NSMenu.

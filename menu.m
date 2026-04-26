@@ -3,19 +3,37 @@
 #include <stdint.h>
 
 void goMenuCallback(int menuID);
+void goOpenFileCallback(const char *path);
 
 @interface MDAppDelegate : NSObject <NSApplicationDelegate>
 - (void)setupMenuWithLang:(NSString *)lang;
 @property (nonatomic, strong) NSString *currentLang;
+@property (nonatomic, strong) NSString *pendingFile;
 @end
 
 @implementation MDAppDelegate
+
+- (void)applicationWillFinishLaunching:(NSNotification *)notification {
+    // This helps ensure we catch openFile: events during startup
+}
+
+- (BOOL)application:(NSApplication *)sender openFile:(NSString *)filename {
+    if (filename) {
+        self.pendingFile = filename;
+        goOpenFileCallback([filename UTF8String]);
+        return YES;
+    }
+    return NO;
+}
 
 - (void)setupMenuWithLang:(NSString *)lang {
     self.currentLang = lang.length > 0 ? lang : @"zhTW";
 
     // i18n dictionary: key -> array [en, zhTW, zhCN, ja, ko]
     NSDictionary *tr = @{
+        @"menuFile":      @[@"File", @"檔案", @"文件", @"ファイル", @"파일"],
+        @"menuView":      @[@"View", @"顯示", @"显示", @"表示", @"보기"],
+        @"menuHelp":      @[@"Help", @"說明", @"幫助", @"ヘルプ", @"도움말"],
         @"appAbout":      @[@"About md-viewer", @"關於 md-viewer", @"关于 md-viewer", @"md-viewer について", @"md-viewer 정보"],
         @"appPref":       @[@"Preferences...", @"偏好設定...", @"偏好设置...", @"環境設定...", @"설정..."],
         @"appQuit":       @[@"Quit md-viewer", @"結束 md-viewer", @"结束 md-viewer", @"md-viewer を終了", @"md-viewer 종료"],
@@ -23,7 +41,7 @@ void goMenuCallback(int menuID);
         @"fileReload":    @[@"Reload", @"重新載入", @"重新载入", @"再読み込み", @"새로고침"],
         @"viewIn":        @[@"Zoom In", @"放大", @"放大", @"拡大", @"확대"],
         @"viewOut":       @[@"Zoom Out", @"縮小", @"缩小", @"縮小", @"축소"],
-        @"viewReset":     @[@"Actual Size", @"實際大小", @"实际大小", @"実際のサイズ", @"실제 크기"],
+        @"viewReset":     @[@"Actual Size", @"實際大小", @"实际大小", @"實際のサイズ", @"실제 크기"],
         @"viewFull":      @[@"Toggle Full Screen", @"切換全螢幕", @"切换全屏", @"フルスクリーン切替", @"전체 화면 전환"],
         @"helpAbout":     @[@"About md-viewer", @"關於 md-viewer", @"关于 md-viewer", @"md-viewer について", @"md-viewer 정보"],
     };
@@ -41,12 +59,12 @@ void goMenuCallback(int menuID);
 
     // App menu
     NSMenuItem *appItem = [[NSMenuItem alloc] init];
+    [appItem setTitle:@"md-viewer"];
     NSMenu *appMenu = [[NSMenu alloc] init];
     [appMenu addItemWithTitle:t(@"appAbout") action:@selector(orderFrontStandardAboutPanel:) keyEquivalent:@""];
     [appMenu addItem:[NSMenuItem separatorItem]];
-    // ⌘S toggles settings panel
-    NSMenuItem *prefShortcut = [[NSMenuItem alloc] initWithTitle:t(@"appPref") action:@selector(menuPreferences) keyEquivalent:@"s"];
-    [prefShortcut setHidden:YES];
+    // ⌘, toggles settings panel (standard macOS shortcut)
+    NSMenuItem *prefShortcut = [[NSMenuItem alloc] initWithTitle:t(@"appPref") action:@selector(menuPreferences) keyEquivalent:@","];
     [appMenu addItem:prefShortcut];
     [appMenu addItem:[NSMenuItem separatorItem]];
     [appMenu addItemWithTitle:t(@"appQuit") action:@selector(menuQuit) keyEquivalent:@"q"];
@@ -55,7 +73,8 @@ void goMenuCallback(int menuID);
 
     // File menu
     NSMenuItem *fileItem = [[NSMenuItem alloc] init];
-    NSMenu *fileMenu = [[NSMenu alloc] init];
+    [fileItem setTitle:t(@"menuFile")];
+    NSMenu *fileMenu = [[NSMenu alloc] initWithTitle:t(@"menuFile")];
     [fileMenu addItemWithTitle:t(@"fileOpen") action:@selector(menuOpen) keyEquivalent:@"o"];
     [fileMenu addItemWithTitle:t(@"fileReload") action:@selector(menuReload) keyEquivalent:@"r"];
     [fileItem setSubmenu:fileMenu];
@@ -63,7 +82,8 @@ void goMenuCallback(int menuID);
 
     // View menu
     NSMenuItem *viewItem = [[NSMenuItem alloc] init];
-    NSMenu *viewMenu = [[NSMenu alloc] init];
+    [viewItem setTitle:t(@"menuView")];
+    NSMenu *viewMenu = [[NSMenu alloc] initWithTitle:t(@"menuView")];
     [viewMenu addItemWithTitle:t(@"viewIn") action:@selector(menuZoomIn) keyEquivalent:@"="];
     [viewMenu addItemWithTitle:t(@"viewOut") action:@selector(menuZoomOut) keyEquivalent:@"-"];
     [viewMenu addItemWithTitle:t(@"viewReset") action:@selector(menuZoomReset) keyEquivalent:@"0"];
@@ -74,7 +94,8 @@ void goMenuCallback(int menuID);
 
     // Help menu
     NSMenuItem *helpItem = [[NSMenuItem alloc] init];
-    NSMenu *helpMenu = [[NSMenu alloc] init];
+    [helpItem setTitle:t(@"menuHelp")];
+    NSMenu *helpMenu = [[NSMenu alloc] initWithTitle:t(@"menuHelp")];
     [helpMenu addItemWithTitle:t(@"helpAbout") action:@selector(orderFrontStandardAboutPanel:) keyEquivalent:@""];
     [helpItem setSubmenu:helpMenu];
     [mainMenu addItem:helpItem];
