@@ -1,0 +1,27 @@
+  這通常發生在移動專案目錄或切換使用者後。最簡單且徹底的解決方法是強制清除快取。
+
+  請嘗試執行以下指令來修復：
+
+  1. 清除 Swift 編譯產物
+  Swift 的編譯目錄是 .build/，我們直接刪除它讓編譯器從零開始重建路徑快取：
+
+   1 # 在專案根目錄下執行
+   2 rm -rf .build/
+
+  2. 清理系統的 Module Cache (如果上述無效)
+  如果問題依舊，可能是系統級的 Clang 快取導致：
+
+   1 rm -rf ~/Library/Developer/Xcode/DerivedData/ModuleCache.noindex/
+   2 # 或者如果該路徑仍報錯，請觀察路徑中的 ModuleCache 資料夾直接刪除
+
+  3. 修正 build.sh (預防性措施)
+  為了讓以後不會再遇到這種「路徑硬編碼」導致的錯誤，我們可以修改 build.sh，在編譯前自動清理 .build
+  目錄。這會讓編譯速度稍慢一點點（因為不能使用增量編譯），但能保證永遠不會出現路徑衝突。
+
+  修改 build.sh：
+  在 swift build -c release 之前加入 rm -rf .build。
+
+   1 # 修改 build.sh 中的對應部分：
+   2 echo "📦 Building Swift MarkdownEngine..."
+   3 rm -rf .build/  # 新增這一行確保路徑正確
+   4 swift build -c release

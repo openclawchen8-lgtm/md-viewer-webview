@@ -11,8 +11,13 @@ FRAMEWORKS_DIR="$CONTENTS_DIR/Frameworks"
 
 echo "🚀 Starting build process..."
 
+# 0. Tidy Go modules
+echo "🧹 Tidying Go modules..."
+go mod tidy
+
 # 1. Build Swift MarkdownEngine
 echo "📦 Building Swift MarkdownEngine..."
+##rm -rf .build/
 swift build -c release
 
 # 2. Build Go Application
