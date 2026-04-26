@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"md-viewer-app/core"
 	"github.com/webview/webview_go"
@@ -155,7 +154,7 @@ const htmlTemplate = `<!DOCTYPE html>
 <body>
 <div class="drop-zone" id="dropZone"><div class="drop-zone-msg">Drop .md file here</div></div>
 <div class="markdown-body" id="mdContent">%s</div>
-<div class="keyboard-hint">⌘O Open | ⌘R Reload | ⌘+/⌘- Zoom | ⌘0 Reset | ⌘, Settings | ⌘Q Quit</div>
+<div class="keyboard-hint" id="keyboardHint">⌘O Open | ⇧⌘R Reset | ⌘+/⌘- Zoom | ⌘S | ⌘Q Quit</div>
 <div class="settings-overlay" id="settingsOverlay" style="display:none">
   <div class="settings-panel">
     <div class="settings-title">
@@ -293,8 +292,36 @@ const htmlTemplate = `<!DOCTYPE html>
   function zoomIn()  { applyZoom(window.zoomState.level + window.zoomState.step); }
   function zoomOut() { applyZoom(window.zoomState.level - window.zoomState.step); }
   function zoomReset(){ applyZoom(1.0); }
-  window.applyZoomLevel = function(level) { 
-    applyZoom(level); 
+  window.applyZoomLevel = function(level) {
+    applyZoom(level);
+  };
+  window.showSettingsPanel = function() {
+    var el = document.getElementById('settingsOverlay');
+    if (el) {
+      el.style.display = 'flex';
+      var slider = document.getElementById('zoomSensitivity');
+      if (slider && window.mdConfig) slider.value = window.mdConfig.zoomSensitivity || 2;
+      var ff = document.getElementById('fontFamily');
+      if (ff && window.mdConfig) {
+        var curr = (window.mdConfig.fontFamily || '').toLowerCase();
+        var opts = ff.options;
+        for (var i = 0; i < opts.length; i++) {
+          if (curr.indexOf(opts[i].value.split(',')[0].trim().replace(/'/g,'')) !== -1) {
+            ff.selectedIndex = i; break;
+          }
+        }
+      }
+      var fs = document.getElementById('fontSize');
+      if (fs && window.mdConfig) fs.value = window.mdConfig.fontSize || 16;
+      var lang = document.getElementById('language');
+      if (lang && window.mdConfig) {
+        lang.value = window.mdConfig.language || 'zhTW';
+      }
+    }
+  };
+  window.hideSettingsPanel = function() {
+    var el = document.getElementById('settingsOverlay');
+    if (el) { el.style.display = 'none'; }
   };
 
   // Trackpad pinch-to-zoom (WebKit gesture events)
@@ -324,6 +351,9 @@ const htmlTemplate = `<!DOCTYPE html>
         if (e.shiftKey) { e.preventDefault(); zoomReset(); }
         else { e.preventDefault(); window.reloadFile(); }
         break;
+      case 's': case 'S':
+        if (!e.ctrlKey) { e.preventDefault(); window.showSettingsPanel && window.showSettingsPanel(); }
+        break;
     }
   });
 
@@ -335,10 +365,18 @@ const htmlTemplate = `<!DOCTYPE html>
   window.applyZoomSensitivity = function(level) {
     window.zoomState.step = [0, 0.05, 0.10, 0.20][level] || 0.10;
   };
-  // Apply on init (called after window.mdConfig is injected)
-  window.applyZoomSensitivity(window.mdConfig && window.mdConfig.zoomSensitivity || 2);
-  if (window.mdConfig && window.mdConfig.zoomLevel) {
-    window.applyZoomLevel(window.mdConfig.zoomLevel);
+  // Apply on init: check _initConfig (injected into HTML) or mdConfig (set via Eval)
+  var _cfg = window._initConfig || window.mdConfig;
+  if (_cfg) {
+    window.mdConfig = _cfg; // ensure mdConfig is available
+    window.applyZoomSensitivity(_cfg.zoomSensitivity || 2);
+    if (_cfg.zoomLevel && _cfg.zoomLevel !== 1) {
+      window.applyZoomLevel(_cfg.zoomLevel);
+    }
+    showZoomIndicator(Math.round((_cfg.zoomLevel || 1.0) * 100));
+  } else {
+    window.applyZoomSensitivity(2);
+    showZoomIndicator(100);
   }
 
   // Zoom indicator
@@ -355,33 +393,13 @@ const htmlTemplate = `<!DOCTYPE html>
     el.style.opacity = '1';
     clearTimeout(window._zoomTimer);
     window._zoomTimer = setTimeout(function(){ el.style.opacity = '0'; }, 1500);
+    // Update persistent zoom display in keyboard hint bar (always show current %)
+    var kh = document.getElementById('keyboardHint');
+    if (kh) kh.textContent = pct + '% | ⌘O Open | ⇧⌘R Reset | ⌘+/⌘- Zoom | ⌘S | ⌘Q Quit';
   }
 })();
-  // Settings panel
-  window.showSettingsPanel = function() {
-    var el = document.getElementById('settingsOverlay');
-    if (el) {
-      el.style.display = 'flex';
-      var slider = document.getElementById('zoomSensitivity');
-      if (slider && window.mdConfig) slider.value = window.mdConfig.zoomSensitivity || 2;
-      var ff = document.getElementById('fontFamily');
-      if (ff && window.mdConfig) {
-        var curr = (window.mdConfig.fontFamily || '').toLowerCase();
-        var opts = ff.options;
-        for (var i = 0; i < opts.length; i++) {
-          if (curr.indexOf(opts[i].value.split(',')[0].trim().replace(/'/g,'')) !== -1) {
-            ff.selectedIndex = i; break;
-          }
-        }
-      }
-      var fs = document.getElementById('fontSize');
-      if (fs && window.mdConfig) fs.value = window.mdConfig.fontSize || 16;
-      var lang = document.getElementById('language');
-      if (lang && window.mdConfig) {
-        lang.value = window.mdConfig.language || 'zhTW';
-      }
-    }
-  };
+  // Settings panel — showSettingsPanel/hideSettingsPanel already exposed in IIFE above
+  // Only rebind event listeners here (safe to call multiple times)
   var zoomSlider = document.getElementById('zoomSensitivity');
   if (zoomSlider) {
     zoomSlider.addEventListener('change', function() {
@@ -417,12 +435,8 @@ const htmlTemplate = `<!DOCTYPE html>
       if (window.applyLanguage) window.applyLanguage(val);
     });
   }
-  window.hideSettingsPanel = function() {
-    var el = document.getElementById('settingsOverlay');
-    if (el) { el.style.display = 'none'; }
-  };
   document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') window.hideSettingsPanel();
+    if (e.key === 'Escape') window.hideSettingsPanel && window.hideSettingsPanel();
   });
   var closeBtn = document.getElementById('settingsClose');
   if (closeBtn) closeBtn.addEventListener('click', window.hideSettingsPanel);
@@ -439,13 +453,21 @@ var (
 func renderMD(md string) string {
 	html, err := renderer.Render(md)
 	if err != nil {
-		return fmt.Sprintf(htmlTemplate, cssContent, fmt.Sprintf(`<div class="error"><strong>Error:</strong> %s</div>`, err.Error()))
+		result := fmt.Sprintf(htmlTemplate, cssContent, fmt.Sprintf(`<div class="error"><strong>Error:</strong> %s</div>`, err.Error()))
+		result = strings.Replace(result, "</head>", fmt.Sprintf(`<script>window._initConfig=%s;</script></head>`, ConfigToJS()), 1)
+		return result
 	}
-	return fmt.Sprintf(htmlTemplate, cssContent, html)
+	result := fmt.Sprintf(htmlTemplate, cssContent, html)
+	// Inject config directly into HTML so IIFE can read it immediately
+	result = strings.Replace(result, "</head>", fmt.Sprintf(`<script>window._initConfig=%s;</script></head>`, ConfigToJS()), 1)
+	return result
 }
 
 func renderEmpty() string {
-	return fmt.Sprintf(htmlTemplate, cssContent, `<div class="empty-state"><div class="empty-state-icon">📄</div><div class="empty-state-title">No file loaded</div><div>Press ⌘O to open a Markdown file</div></div>`)
+	html := fmt.Sprintf(htmlTemplate, cssContent, `<div class="empty-state"><div class="empty-state-icon">📄</div><div class="empty-state-title">No file loaded</div><div>Press ⌘O to open a Markdown file</div></div>`)
+	// Inject config directly into HTML so IIFE can read it immediately
+	html = strings.Replace(html, "</head>", fmt.Sprintf(`<script>window._initConfig=%s;</script></head>`, ConfigToJS()), 1)
+	return html
 }
 
 func renderError(msg string) string {
@@ -471,9 +493,6 @@ func loadFile(path string) {
 	if err != nil {
 		if currentWV != nil {
 			currentWV.SetHtml(renderError("Cannot read: " + err.Error()))
-			currentWV.Eval(getConfigJS())
-			currentWV.Eval("console.log('[DEBUG loadFile error] calling applyZoomLevel, mdConfig.zoomLevel =', window.mdConfig && window.mdConfig.zoomLevel)")
-			currentWV.Eval("if(window.mdConfig && window.mdConfig.zoomLevel){window.applyZoomLevel && window.applyZoomLevel(window.mdConfig.zoomLevel)}")
 		}
 		return
 	}
@@ -481,9 +500,6 @@ func loadFile(path string) {
 	if currentWV != nil {
 		currentWV.SetTitle(filepath.Base(path) + " - md-viewer")
 		currentWV.SetHtml(renderMD(string(data)))
-		currentWV.Eval(getConfigJS())
-		currentWV.Eval("console.log('[DEBUG loadFile] After SetHtml, calling applyZoomLevel with mdConfig.zoomLevel =', window.mdConfig && window.mdConfig.zoomLevel)")
-		currentWV.Eval("if(window.mdConfig && window.mdConfig.zoomLevel){window.applyZoomLevel && window.applyZoomLevel(window.mdConfig.zoomLevel)}")
 	}
 }
 
@@ -518,9 +534,10 @@ func main() {
 	defer wv.Destroy()
 
 	SetupMenu(func(menuID int) {
+		fmt.Fprintf(os.Stderr, "[MENU] callback fired: menuID=%d\n", menuID)
 		switch menuID {
 		case MenuPreferences:
-			wv.Eval("showSettingsPanel && showSettingsPanel()")
+			wv.Eval("var _el=document.getElementById('settingsOverlay');if(_el){_el.style.display='flex';document.title='SETTINGS-OPENED';}else{document.title='NO-OVERLAY-ELEM';}")
 		case MenuOpen:
 			wv.Dispatch(func() { openFile() })
 		case MenuReload:
@@ -561,9 +578,6 @@ func main() {
 		if currentWV != nil {
 			currentWV.SetTitle(filename + " - md-viewer")
 			currentWV.SetHtml(renderMD(content))
-			currentWV.Eval(getConfigJS())
-			currentWV.Eval("console.log('[DEBUG loadFileContent] calling applyZoomLevel, mdConfig.zoomLevel =', window.mdConfig && window.mdConfig.zoomLevel)")
-			currentWV.Eval("if(window.mdConfig && window.mdConfig.zoomLevel){window.applyZoomLevel && window.applyZoomLevel(window.mdConfig.zoomLevel)}")
 		}
 	})
 	wv.Bind("saveZoomSensitivity", func(level int) {
@@ -589,28 +603,11 @@ func main() {
 		}
 	})
 
-	// config is injected into htmlTemplate via fmt.Sprintf below
+	// config is injected into htmlTemplate via _initConfig script
 	if currentFile == "" {
 		wv.SetHtml(renderEmpty())
-		wv.Eval(getConfigJS())
-		// 還原 zoom level（SetHtml 重建了 IIFE，需重新套用）
-		wv.Eval("if(window.mdConfig && window.mdConfig.zoomLevel){window.applyZoomLevel && window.applyZoomLevel(window.mdConfig.zoomLevel)}")
-		// DEBUG: 用 Go 端延遲確認 zoom 狀態（比 JS setTimeout 更可靠）
-		go func() {
-			time.Sleep(1 * time.Second)
-			wv.Eval(fmt.Sprintf(`alert("AFTER 1s DELAY:\nbody.zoom=" + document.body.style.zoom + "\nzoomState.level=" + (window.zoomState&&window.zoomState.level) + "\nmdConfig.zoomLevel=" + (window.mdConfig&&window.mdConfig.zoomLevel) + "\nexpectedZoomLevel=%.4f"`, currentConfig.ZoomLevel))
-		}()
-		go func() {
-			time.Sleep(2 * time.Second)
-			exec.Command("osascript", "-e", fmt.Sprintf(
-				`display notification "zoomLevel=%.4f" with title "md-viewer init"`,
-				currentConfig.ZoomLevel,
-			)).Run()
-		}()
 	} else {
-		// Load file after webview is ready
 		wv.SetHtml(renderMD("Loading..."))
-		wv.Eval(getConfigJS())
 		wv.Dispatch(func() { loadFile(currentFile) })
 	}
 
