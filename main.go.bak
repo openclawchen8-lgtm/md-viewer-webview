@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"md-viewer-app/core"
 	"github.com/webview/webview_go"
@@ -285,17 +284,12 @@ const htmlTemplate = `<!DOCTYPE html>
     level = Math.max(minZoom, Math.min(maxZoom, level));
     window.zoomState.level = level;
     document.body.style.zoom = level;
-    if (window.saveZoomLevel) {
-      window.saveZoomLevel(level);
-    }
+    if (window._setZoomLevel) window._setZoomLevel(level);
     showZoomIndicator(Math.round(level * 100));
   }
   function zoomIn()  { applyZoom(window.zoomState.level + window.zoomState.step); }
   function zoomOut() { applyZoom(window.zoomState.level - window.zoomState.step); }
   function zoomReset(){ applyZoom(1.0); }
-  window.applyZoomLevel = function(level) { 
-    applyZoom(level); 
-  };
 
   // Trackpad pinch-to-zoom (WebKit gesture events)
   var lastDist = 0;
@@ -320,10 +314,7 @@ const htmlTemplate = `<!DOCTYPE html>
       case '-': case '_':            e.preventDefault(); zoomOut(); break;
       case '0':                      e.preventDefault(); zoomReset(); break;
       case 'o': case 'O':            e.preventDefault(); window.openFile();   break;
-      case 'r': case 'R':
-        if (e.shiftKey) { e.preventDefault(); zoomReset(); }
-        else { e.preventDefault(); window.reloadFile(); }
-        break;
+      case 'r': case 'R':            e.preventDefault(); window.reloadFile(); break;
     }
   });
 
@@ -342,7 +333,7 @@ const htmlTemplate = `<!DOCTYPE html>
   }
 
   // Zoom indicator
-  window._zoomTimer = null;
+  var timer;
   function showZoomIndicator(pct) {
     var el = document.getElementById('zoomIndicator');
     if (!el) {
@@ -353,8 +344,8 @@ const htmlTemplate = `<!DOCTYPE html>
     }
     el.textContent = pct + '%';
     el.style.opacity = '1';
-    clearTimeout(window._zoomTimer);
-    window._zoomTimer = setTimeout(function(){ el.style.opacity = '0'; }, 1500);
+    clearTimeout(timer);
+    timer = setTimeout(function(){ el.style.opacity = '0'; }, 1500);
   }
 })();
   // Settings panel
@@ -470,19 +461,20 @@ func loadFile(path string) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if currentWV != nil {
-			currentWV.SetHtml(renderError("Cannot read: " + err.Error()))
-			currentWV.Eval(getConfigJS())
-			currentWV.Eval("console.log('[DEBUG loadFile error] calling applyZoomLevel, mdConfig.zoomLevel =', window.mdConfig && window.mdConfig.zoomLevel)")
-			currentWV.Eval("if(window.mdConfig && window.mdConfig.zoomLevel){window.applyZoomLevel && window.applyZoomLevel(window.mdConfig.zoomLevel)}")
+			currentWV.Eval("window._savedZoom = {level: window.zoomState && window.zoomState.level || 1.0, step: window.zoomState && window.zoomState.step || 0.1};")
+		currentWV.SetHtml(renderError("Cannot read: " + err.Error()))
+		currentWV.Eval(getConfigJS())
+		currentWV.Eval("if(window.mdConfig && window.mdConfig.zoomLevel){window.applyZoomLevel && window.applyZoomLevel(window.mdConfig.zoomLevel)}")
+		currentWV.Eval("if(window._savedZoom){window.zoomState=window._savedZoom;document.body.style.zoom=window.zoomState.level;}")
 		}
 		return
 	}
 	currentFile = path
 	if currentWV != nil {
+		currentWV.Eval("window._savedZoom = {level: window.zoomState && window.zoomState.level || 1.0, step: window.zoomState && window.zoomState.step || 0.1};")
 		currentWV.SetTitle(filepath.Base(path) + " - md-viewer")
 		currentWV.SetHtml(renderMD(string(data)))
 		currentWV.Eval(getConfigJS())
-		currentWV.Eval("console.log('[DEBUG loadFile] After SetHtml, calling applyZoomLevel with mdConfig.zoomLevel =', window.mdConfig && window.mdConfig.zoomLevel)")
 		currentWV.Eval("if(window.mdConfig && window.mdConfig.zoomLevel){window.applyZoomLevel && window.applyZoomLevel(window.mdConfig.zoomLevel)}")
 	}
 }
@@ -559,10 +551,10 @@ func main() {
 	wv.Bind("loadFileContent", func(filename, content string) {
 		currentFile = "(dragged): " + filename
 		if currentWV != nil {
+			currentWV.Eval("window._savedZoom = {level: window.zoomState && window.zoomState.level || 1.0, step: window.zoomState && window.zoomState.step || 0.1};")
 			currentWV.SetTitle(filename + " - md-viewer")
 			currentWV.SetHtml(renderMD(content))
 			currentWV.Eval(getConfigJS())
-			currentWV.Eval("console.log('[DEBUG loadFileContent] calling applyZoomLevel, mdConfig.zoomLevel =', window.mdConfig && window.mdConfig.zoomLevel)")
 			currentWV.Eval("if(window.mdConfig && window.mdConfig.zoomLevel){window.applyZoomLevel && window.applyZoomLevel(window.mdConfig.zoomLevel)}")
 		}
 	})
@@ -592,26 +584,12 @@ func main() {
 	// config is injected into htmlTemplate via fmt.Sprintf below
 	if currentFile == "" {
 		wv.SetHtml(renderEmpty())
-		wv.Eval(getConfigJS())
-		// 還原 zoom level（SetHtml 重建了 IIFE，需重新套用）
-		wv.Eval("if(window.mdConfig && window.mdConfig.zoomLevel){window.applyZoomLevel && window.applyZoomLevel(window.mdConfig.zoomLevel)}")
-		// DEBUG: 用 Go 端延遲確認 zoom 狀態（比 JS setTimeout 更可靠）
-		go func() {
-			time.Sleep(1 * time.Second)
-			wv.Eval(fmt.Sprintf(`alert("AFTER 1s DELAY:\nbody.zoom=" + document.body.style.zoom + "\nzoomState.level=" + (window.zoomState&&window.zoomState.level) + "\nmdConfig.zoomLevel=" + (window.mdConfig&&window.mdConfig.zoomLevel) + "\nexpectedZoomLevel=%.4f"`, currentConfig.ZoomLevel))
-		}()
-		go func() {
-			time.Sleep(2 * time.Second)
-			exec.Command("osascript", "-e", fmt.Sprintf(
-				`display notification "zoomLevel=%.4f" with title "md-viewer init"`,
-				currentConfig.ZoomLevel,
-			)).Run()
-		}()
+	wv.Eval(getConfigJS())
 	} else {
 		// Load file after webview is ready
-		wv.SetHtml(renderMD("Loading..."))
+			wv.SetHtml(renderMD("Loading..."))
 		wv.Eval(getConfigJS())
-		wv.Dispatch(func() { loadFile(currentFile) })
+			wv.Dispatch(func() { loadFile(currentFile) })
 	}
 
 	wv.Run()
