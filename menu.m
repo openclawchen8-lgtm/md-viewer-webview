@@ -44,8 +44,7 @@ void goMenuCallback(int menuID);
     NSMenu *appMenu = [[NSMenu alloc] init];
     [appMenu addItemWithTitle:t(@"appAbout") action:@selector(orderFrontStandardAboutPanel:) keyEquivalent:@""];
     [appMenu addItem:[NSMenuItem separatorItem]];
-    [appMenu addItemWithTitle:t(@"appPref") action:@selector(menuPreferences) keyEquivalent:@","];
-    // ⌘S also opens settings (hidden from menu display but key binding active)
+    // ⌘S toggles settings panel
     NSMenuItem *prefShortcut = [[NSMenuItem alloc] initWithTitle:t(@"appPref") action:@selector(menuPreferences) keyEquivalent:@"s"];
     [prefShortcut setHidden:YES];
     [appMenu addItem:prefShortcut];

@@ -321,7 +321,7 @@ const htmlTemplate = `<!DOCTYPE html>
   };
   window.hideSettingsPanel = function() {
     var el = document.getElementById('settingsOverlay');
-    if (el) { el.style.display = 'none'; }
+    if (el) { el.style.display = (el.style.display === 'none' || el.style.display === '') ? 'flex' : 'none'; }
   };
 
   // Trackpad pinch-to-zoom (WebKit gesture events)
@@ -352,7 +352,7 @@ const htmlTemplate = `<!DOCTYPE html>
         else { e.preventDefault(); window.reloadFile(); }
         break;
       case 's': case 'S':
-        if (!e.ctrlKey) { e.preventDefault(); window.showSettingsPanel && window.showSettingsPanel(); }
+        if (!e.ctrlKey) { e.preventDefault(); window.hideSettingsPanel && window.hideSettingsPanel(); }
         break;
     }
   });
@@ -500,6 +500,8 @@ func loadFile(path string) {
 	if currentWV != nil {
 		currentWV.SetTitle(filepath.Base(path) + " - md-viewer")
 		currentWV.SetHtml(renderMD(string(data)))
+		// Restore zoom level after HTML is rendered
+		currentWV.Eval("if(window.applyZoomLevel) window.applyZoomLevel(window.mdConfig && window.mdConfig.zoomLevel || 1);")
 	}
 }
 
