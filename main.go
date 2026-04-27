@@ -102,17 +102,19 @@ body {
   padding: 2rem;
 }
 @keyframes pink-flash {
-  0% { box-shadow: inset 0 0 0 0 rgba(255, 105, 180, 0); }
-  20% { box-shadow: inset 0 0 25px 8px rgba(255, 105, 180, 0.6); }
-  100% { box-shadow: inset 0 0 0 0 rgba(255, 105, 180, 0); }
+  0%, 100% { border: 0px solid rgba(255, 20, 147, 0); box-shadow: inset 0 0 0 0 rgba(255, 20, 147, 0); }
+  20%, 40% { border: 10px solid rgba(255, 20, 147, 0.8); box-shadow: inset 0 0 50px 20px rgba(255, 20, 147, 0.7); }
+  50% { border: 0px solid rgba(255, 20, 147, 0); box-shadow: inset 0 0 0 0 rgba(255, 20, 147, 0); }
+  70%, 90% { border: 10px solid rgba(255, 20, 147, 0.8); box-shadow: inset 0 0 50px 20px rgba(255, 20, 147, 0.7); }
 }
 .reload-flash #reloadOverlay {
-  animation: pink-flash 1.0s ease-out;
+  animation: pink-flash 1.5s ease-in-out;
 }
 #reloadOverlay {
   position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-  pointer-events: none; z-index: 100000;
-  box-shadow: inset 0 0 0 0 rgba(255, 105, 180, 0);
+  pointer-events: none; z-index: 2147483647;
+  border: 0px solid transparent;
+  box-sizing: border-box;
 }
 .markdown-body { max-width: 900px; margin: 0 auto; }
 .markdown-body h1 { font-size: 2em; border-bottom: 1px solid var(--color-border-default); padding-bottom: 0.3em; margin-bottom: 1em; margin-top: 1.5em; }
@@ -682,7 +684,8 @@ func renderMD(md string) string {
 	}
 	res := prepareHTML(fmt.Sprintf(htmlTemplate, cssContent, html))
 	if pendingFlash {
-		res = strings.Replace(res, `<body data-theme="auto">`, `<body data-theme="auto" class="reload-flash">`, 1)
+		// 使用正規表示式或更寬鬆的替換，確保 class 被加上去
+		res = strings.Replace(res, "<body ", "<body class=\"reload-flash\" ", 1)
 		pendingFlash = false
 	}
 	return res
