@@ -280,13 +280,17 @@ window.applyZoomLevel = function(level) {
   level = Math.max(minZoom, Math.min(maxZoom, level));
   window.zoomState.level = level;
   if (document.body) document.body.style.zoom = level;
+  
+  // 強制更新所有顯示縮放文字的地方
+  var zt = document.getElementById('zoomText');
+  if (zt) {
+    zt.innerText = Math.round(level * 100) + '%%';
+  }
+  
   if (window.saveZoomLevel) window.saveZoomLevel(level);
   window.showZoomIndicator(Math.round(level * 100));
 };
 window.showZoomIndicator = function(pct) {
-  // Update zoom text span (avoids Go fmt %% escaping issue)
-  var zt = document.getElementById('zoomText');
-  if (zt) zt.textContent = pct + '%';
   // Floating indicator (fades out after 1.5s)
   var el = document.getElementById('zoomIndicator');
   if (!el) {
@@ -296,7 +300,7 @@ window.showZoomIndicator = function(pct) {
     if (document.body) document.body.appendChild(el);
   }
   if (el) {
-    el.textContent = pct + '%';
+    el.innerText = pct + '%%';
     el.style.opacity = '1';
     clearTimeout(window._zoomTimer);
     window._zoomTimer = setTimeout(function(){ el.style.opacity = '0'; }, 1500);

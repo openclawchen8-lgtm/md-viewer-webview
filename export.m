@@ -108,8 +108,8 @@ void ExportPDF(const char *htmlUTF8, const char *defaultNameUTF8, const char *ba
 
                     NSString *restoreJS = [NSString stringWithFormat:@"\
                         document.body.classList.remove('is-exporting');\
-                        document.body.style.zoom = '%@';\
-                        window.scrollTo(0, %@);", safeZoom, safeScrollY];
+                        if (window.applyZoomLevel) { window.applyZoomLevel(%@); } else { document.body.style.zoom = '%@'; }\
+                        window.scrollTo(0, %@);", safeZoom, safeZoom, safeScrollY];
                     [wv evaluateJavaScript:restoreJS completionHandler:nil];
 
                     if (error || !pdfData) {
