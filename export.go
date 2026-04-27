@@ -8,7 +8,7 @@ package main
 #include <stdint.h>
 
 extern void ExportHTML(const char *htmlUTF8, const char *defaultNameUTF8);
-extern void ExportPDF(const char *htmlUTF8, const char *defaultNameUTF8);
+extern void ExportPDF(const char *htmlUTF8, const char *defaultNameUTF8, void *windowPtr);
 */
 import "C"
 import (
@@ -33,6 +33,7 @@ type exportResult struct {
 
 var (
 	exportMu   sync.Mutex
+	exportCond = sync.NewCond(&exportMu)
 	exportDone bool
 	exportRes  exportResult
 )
@@ -41,32 +42,28 @@ var (
 func goExportHTMLResult(path, errorMsg *C.char) {
 	exportMu.Lock()
 	defer exportMu.Unlock()
-
-	var err error
-	if errorMsg != nil {
-		err = fmt.Errorf("%s", C.GoString(errorMsg))
-	} else if path == nil {
-		err = fmt.Errorf("cancelled")
-	}
-	exportRes = exportResult{path: GoStringOrEmpty(path), err: err}
+	exportRes = buildExportResult(path, errorMsg)
 	exportDone = true
-	fmt.Fprintf(os.Stderr, "[CB] goExportHTMLResult done=true err=%v\n", err)
+	exportCond.Signal()
 }
 
 //export goExportPDFResult
 func goExportPDFResult(path, errorMsg *C.char) {
 	exportMu.Lock()
 	defer exportMu.Unlock()
-
-	var err error
-	if errorMsg != nil {
-		err = fmt.Errorf("%s", C.GoString(errorMsg))
-	} else if path == nil {
-		err = fmt.Errorf("cancelled")
-	}
-	exportRes = exportResult{path: GoStringOrEmpty(path), err: err}
+	exportRes = buildExportResult(path, errorMsg)
 	exportDone = true
-	fmt.Fprintf(os.Stderr, "[CB] goExportPDFResult done=true err=%v\n", err)
+	exportCond.Signal()
+}
+
+func buildExportResult(path, errorMsg *C.char) exportResult {
+	if errorMsg != nil {
+		return exportResult{err: fmt.Errorf("%s", C.GoString(errorMsg))}
+	}
+	if path == nil {
+		return exportResult{err: fmt.Errorf("cancelled")}
+	}
+	return exportResult{path: C.GoString(path)}
 }
 
 func GoStringOrEmpty(p *C.char) string {
@@ -87,7 +84,6 @@ func getExportFilename() string {
 }
 
 func buildExportHTML() string {
-	fmt.Fprintf(os.Stderr, "[buildExportHTML] called, exportContent=%d, currentFile=%q\n", len(exportContent), currentFile)
 	var content string
 
 	if exportContent != "" {
@@ -117,8 +113,8 @@ func buildExportHTML() string {
 	html = removeHTMLBlock(html, `<div class="drop-zone"`, `</div>`)
 	html = removeHTMLBlock(html, `<div class="keyboard-hint"`, `</div>`)
 	html = removeHTMLBlock(html, `<div class="settings-overlay"`, `</div>`)
-	html = removeHTMLBlock(html, `<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js`, `</link>`)
-	html = removeHTMLBlock(html, `<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js`, `</script>`)
+	html = removeHTMLBlock(html, `<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js`, "")
+	html = removeHTMLBlock(html, `<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js`, "")
 
 	theme := currentConfig.Theme
 	if theme == "" || theme == "auto" {
@@ -130,41 +126,64 @@ func buildExportHTML() string {
 }
 
 func removeHTMLBlock(html, startTag, endTag string) string {
-	// Handles BOTH self-closing tags (<link>, <meta>) and paired tags (<script>, <div>).
-	// For self-closing: find first '>' after startTag (even if attributes follow it).
-	// For paired: find first endTag after startTag.
 	startIdx := strings.Index(html, startTag)
 	if startIdx == -1 {
 		return html
 	}
-	searchFrom := startIdx + len(startTag)
-	// Check if this is a self-closing tag: '>' appears before endTag
-	selfCloseIdx := -1
-	if endIdx := strings.Index(html[searchFrom:], ">"); endIdx != -1 {
-		selfCloseIdx = endIdx
+
+	// 找到 opening tag 的結束位置（第一個 '>'）
+	openEnd := strings.Index(html[startIdx:], ">")
+	if openEnd == -1 {
+		return html[:startIdx]
 	}
-	hasEndTag := false
-	if endIdx := strings.Index(html[searchFrom:], endTag); endIdx != -1 {
-		hasEndTag = true
-		// Only treat as paired if endTag comes BEFORE the first '>'
-		if selfCloseIdx != -1 && endIdx > selfCloseIdx {
-			hasEndTag = false
+	openEnd += startIdx + 1 // 指向 '>' 之後
+
+	// endTag 為空代表 self-closing tag，直接砍掉 opening tag 本身
+	if endTag == "" {
+		return html[:startIdx] + html[openEnd:]
+	}
+
+	// 用深度追蹤找對應的 closing tag，從 opening tag 結束後開始掃
+	depth := 1
+	i := openEnd
+	for i <= len(html)-len(endTag) {
+		if html[i] == '<' {
+			k := i + 1
+			isClose := k < len(html) && html[k] == '/'
+			if isClose {
+				k++
+			}
+			tagEnd := k
+			for tagEnd < len(html) && isLetter(html[tagEnd]) {
+				tagEnd++
+			}
+			tagName := html[k:tagEnd]
+			if isBlockTag(tagName) {
+				if !isClose {
+					depth++
+				} else {
+					depth--
+					if depth == 0 {
+						closeEnd := strings.Index(html[i:], ">")
+						if closeEnd == -1 {
+							break
+						}
+						return html[:startIdx] + html[i+closeEnd+1:]
+					}
+				}
+			}
 		}
-	}
-	if selfCloseIdx != -1 && !hasEndTag {
-		// Self-closing tag: remove from startTag to first '>'
-		selfCloseIdx += searchFrom + 1
-		return html[:startIdx] + html[selfCloseIdx:]
-	}
-	if endIdx := strings.Index(html[searchFrom:], endTag); endIdx != -1 {
-		endIdx += searchFrom + len(endTag)
-		return html[:startIdx] + html[endIdx:]
+		i++
 	}
 	return html[:startIdx]
 }
 
+func isLetter(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
+}
+
 func isBlockTag(name string) bool {
-	switch strings.ToLower(name) {
+	switch name {
 	case "div", "section", "article", "aside", "header", "footer", "nav",
 		"main", "figure", "figcaption", "details", "summary",
 		"blockquote", "fieldset", "form", "table", "thead", "tbody",
@@ -175,11 +194,9 @@ func isBlockTag(name string) bool {
 	return false
 }
 
-// ─── exportHTML ─────────────────────────────────────────────────────────────
-// Uses sync.Mutex + flag instead of channels to avoid goroutine-blocking issues.
-// goroutine waits on exportDone flag; callback sets it to true and returns.
-// sync.Mutex is released during cond.Wait(), so Go scheduler can run other goroutines.
-func exportHTML() {
+// ─── doExport ───────────────────────────────────────────────────────────────
+
+func doExport(label string, callC func(*C.char, *C.char)) {
 	exportMu.Lock()
 	exportDone = false
 	exportRes = exportResult{}
@@ -187,67 +204,30 @@ func exportHTML() {
 
 	html := buildExportHTML()
 	if html == "" {
-		fmt.Fprintln(os.Stderr, "[ExportHTML] empty HTML")
+		fmt.Fprintf(os.Stderr, "[%s] empty HTML\n", label)
 		return
 	}
 
-	fmt.Fprintf(os.Stderr, "[ExportHTML] calling C.ExportHTML (len=%d)\n", len(html))
+	fmt.Fprintf(os.Stderr, "[%s] calling C fn (len=%d)\n", label, len(html))
 	cName := C.CString(getExportFilename())
 	cHTML := C.CString(html)
-	C.ExportHTML(cHTML, cName)
+	callC(cHTML, cName)
 	C.free(unsafe.Pointer(cName))
 	C.free(unsafe.Pointer(cHTML))
 
-	// Wait for ObjC callback by polling the exportDone flag.
-	// Lock is released during the check, allowing Go scheduler to run.
-	for {
-		exportMu.Lock()
-		if exportDone {
-			res := exportRes
-			exportMu.Unlock()
-			if res.err != nil {
-				fmt.Fprintf(os.Stderr, "[ExportHTML] %v\n", res.err)
-			} else {
-				fmt.Fprintln(os.Stderr, "[ExportHTML] Saved")
-			}
-			return
-		}
-		exportMu.Unlock()
-	}
-}
-
-// ─── exportPDF ──────────────────────────────────────────────────────────────
-func exportPDF() {
 	exportMu.Lock()
-	exportDone = false
-	exportRes = exportResult{}
+	for !exportDone {
+		exportCond.Wait()
+	}
+	res := exportRes
 	exportMu.Unlock()
 
-	html := buildExportHTML()
-	if html == "" {
-		fmt.Fprintln(os.Stderr, "[ExportPDF] empty HTML")
-		return
-	}
-
-	fmt.Fprintf(os.Stderr, "[ExportPDF] calling C.ExportPDF (len=%d)\n", len(html))
-	cName := C.CString(getExportFilename())
-	cHTML := C.CString(html)
-	C.ExportPDF(cHTML, cName)
-	C.free(unsafe.Pointer(cName))
-	C.free(unsafe.Pointer(cHTML))
-
-	for {
-		exportMu.Lock()
-		if exportDone {
-			res := exportRes
-			exportMu.Unlock()
-			if res.err != nil {
-				fmt.Fprintf(os.Stderr, "[ExportPDF] %v\n", res.err)
-			} else {
-				fmt.Fprintln(os.Stderr, "[ExportPDF] Saved")
-			}
-			return
-		}
-		exportMu.Unlock()
+	if res.err != nil {
+		fmt.Fprintf(os.Stderr, "[%s] %v\n", label, res.err)
+	} else {
+		fmt.Fprintf(os.Stderr, "[%s] Saved\n", label)
 	}
 }
+
+func exportHTML() { go doExport("ExportHTML", func(cHTML, cName *C.char) { C.ExportHTML(cHTML, cName) }) }
+func exportPDF()  { go doExport("ExportPDF", func(cHTML, cName *C.char) { C.ExportPDF(cHTML, cName, wv.Window()) }) }
