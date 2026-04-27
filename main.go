@@ -7,9 +7,20 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"md-viewer/core"
+
+	"github.com/fsnotify/fsnotify"
 	"github.com/webview/webview_go"
+)
+
+var (
+	watcher      *fsnotify.Watcher
+	watchMu      sync.Mutex
+	debounceTimer *time.Timer
+	pendingFlash bool
 )
 
 const cssContent = `
@@ -89,6 +100,19 @@ body {
   color: var(--color-fg-default);
   background: var(--color-canvas-default);
   padding: 2rem;
+}
+@keyframes pink-flash {
+  0% { box-shadow: inset 0 0 0 0 rgba(255, 105, 180, 0); }
+  20% { box-shadow: inset 0 0 25px 8px rgba(255, 105, 180, 0.6); }
+  100% { box-shadow: inset 0 0 0 0 rgba(255, 105, 180, 0); }
+}
+.reload-flash #reloadOverlay {
+  animation: pink-flash 1.0s ease-out;
+}
+#reloadOverlay {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  pointer-events: none; z-index: 100000;
+  box-shadow: inset 0 0 0 0 rgba(255, 105, 180, 0);
 }
 .markdown-body { max-width: 900px; margin: 0 auto; }
 .markdown-body h1 { font-size: 2em; border-bottom: 1px solid var(--color-border-default); padding-bottom: 0.3em; margin-bottom: 1em; margin-top: 1.5em; }
@@ -214,6 +238,7 @@ const htmlTemplate = `<!DOCTYPE html>
 <style>%s</style>
 </head>
 <body data-theme="auto">
+<div id="reloadOverlay"></div>
 <div class="drop-zone" id="dropZone"><div class="drop-zone-msg">Drop .md file here</div></div>
 <div class="markdown-body" id="mdContent">%s</div>
 <div class="keyboard-hint" id="keyboardHint"><span id="zoomText" style="font-weight:700; color:var(--color-fg-default); margin-right:4px;">100%%</span> | ⌘O Open | ⌘R Reload | ⌘+/- Zoom | ⇧⌘R/⌘0 Reset | ⌘, Settings | ⌘Q Quit</div>
@@ -362,6 +387,12 @@ window.showSettingsPanel = function() {
 window.hideSettingsPanel = function() {
   var el = document.getElementById('settingsOverlay');
   if (el) el.style.display = 'none';
+};
+window.triggerReloadFlash = function() {
+  var body = document.body;
+  body.classList.remove('reload-flash');
+  void body.offsetWidth; // 強制重繪以重啟動畫
+  body.classList.add('reload-flash');
 };
 window.toggleSettingsPanel = function() {
   var el = document.getElementById('settingsOverlay');
@@ -649,7 +680,12 @@ func renderMD(md string) string {
 	if err != nil {
 		return renderError(err.Error())
 	}
-	return prepareHTML(fmt.Sprintf(htmlTemplate, cssContent, html))
+	res := prepareHTML(fmt.Sprintf(htmlTemplate, cssContent, html))
+	if pendingFlash {
+		res = strings.Replace(res, `<body data-theme="auto">`, `<body data-theme="auto" class="reload-flash">`, 1)
+		pendingFlash = false
+	}
+	return res
 }
 
 func renderEmpty() string {
@@ -665,6 +701,78 @@ func renderError(msg string) string {
 // getConfigJS returns the config JS snippet (call after LoadConfig)
 func getConfigJS() string {
 	return ConfigToJS()
+}
+
+func updateWatcher(path string) {
+	watchMu.Lock()
+	defer watchMu.Unlock()
+
+	if watcher == nil {
+		var err error
+		watcher, err = fsnotify.NewWatcher()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Error creating watcher:", err)
+			return
+		}
+
+		go func() {
+			for {
+				select {
+				case event, ok := <-watcher.Events:
+					if !ok {
+						return
+					}
+					// 監聽寫入、重新建立或重新命名 (原子存檔) 事件
+					if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) || event.Has(fsnotify.Rename) {
+						watchMu.Lock()
+						
+						// 如果是 Rename，表示舊的 fd 可能失效，需要稍後重新 Add
+						isRename := event.Has(fsnotify.Rename)
+						
+						if debounceTimer != nil {
+							debounceTimer.Stop()
+						}
+						
+						debounceTimer = time.AfterFunc(150*time.Millisecond, func() {
+							watchMu.Lock()
+							defer watchMu.Unlock()
+							
+							if isRename && currentFile != "" {
+								// 重新將檔案加入監聽
+								watcher.Remove(event.Name)
+								watcher.Add(currentFile)
+							}
+							
+							if currentWV != nil {
+								currentWV.Dispatch(func() {
+									reloadFile()
+								})
+							}
+						})
+						watchMu.Unlock()
+					}
+				case err, ok := <-watcher.Errors:
+					if !ok {
+						return
+					}
+					fmt.Fprintln(os.Stderr, "Watcher error:", err)
+				}
+			}
+		}()
+	}
+
+	// 移除舊的監聽
+	for _, w := range watcher.WatchList() {
+		watcher.Remove(w)
+	}
+
+	// 監聽新的檔案
+	if path != "" && !strings.HasPrefix(path, "(dragged)") {
+		err := watcher.Add(path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error watching %s: %v\n", path, err)
+		}
+	}
 }
 
 func openFile() {
@@ -691,6 +799,7 @@ func loadFile(path string) {
 	}
 
 	currentFile = absPath
+	updateWatcher(absPath)
 	// Keep exportContent in sync for export feature (supports drag-and-drop scenarios)
 	exportContent = string(data)
 	if currentWV == nil {
@@ -715,6 +824,7 @@ func loadFile(path string) {
 
 func reloadFile() {
 	if currentFile != "" {
+		pendingFlash = true
 		loadFile(currentFile)
 	}
 }
@@ -729,6 +839,10 @@ func main() {
 
 	if len(os.Args) > 1 {
 		currentFile = os.Args[1]
+		abs, err := filepath.Abs(currentFile)
+		if err == nil {
+			updateWatcher(abs)
+		}
 	}
 
 	title := "md-viewer"
@@ -743,6 +857,13 @@ func main() {
 	}
 	currentWV = wv
 	defer wv.Destroy()
+	defer func() {
+		watchMu.Lock()
+		if watcher != nil {
+			watcher.Close()
+		}
+		watchMu.Unlock()
+	}()
 
 	SetupMenu(func(menuID int) {
 		fmt.Fprintf(os.Stderr, "[MENU] callback fired: menuID=%d\n", menuID)
