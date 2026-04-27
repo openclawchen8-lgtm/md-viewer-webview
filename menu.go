@@ -29,6 +29,8 @@ const (
 	MenuToggleSidebar = 9
 	MenuAboutHelp     = 10
 	MenuFullscreen    = 11
+	MenuExportHTML    = 12
+	MenuExportPDF     = 13
 )
 
 var menuCallback func(int)

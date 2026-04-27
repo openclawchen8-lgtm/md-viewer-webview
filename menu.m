@@ -33,12 +33,15 @@ void goOpenFileCallback(const char *path);
     NSDictionary *tr = @{
         @"menuFile":      @[@"File", @"檔案", @"文件", @"ファイル", @"파일"],
         @"menuView":      @[@"View", @"顯示", @"显示", @"表示", @"보기"],
+        @"menuExport":    @[@"Export", @"匯出", @"导出", @"エクスポート", @"내보내기"],
         @"menuHelp":      @[@"Help", @"說明", @"幫助", @"ヘルプ", @"도움말"],
         @"appAbout":      @[@"About md-viewer", @"關於 md-viewer", @"关于 md-viewer", @"md-viewer について", @"md-viewer 정보"],
         @"appPref":       @[@"Preferences...", @"偏好設定...", @"偏好设置...", @"環境設定...", @"설정..."],
         @"appQuit":       @[@"Quit md-viewer", @"結束 md-viewer", @"结束 md-viewer", @"md-viewer を終了", @"md-viewer 종료"],
         @"fileOpen":      @[@"Open...", @"開啟檔案...", @"打开文件...", @"ファイルを開く...", @"파일 열기..."],
         @"fileReload":    @[@"Reload", @"重新載入", @"重新载入", @"再読み込み", @"새로고침"],
+        @"fileExportHTML":@[@"Export as HTML...", @"匯出為 HTML...", @"导出为 HTML...", @"HTML としてエクスポート...", @"HTML로 내보내기..."],
+        @"fileExportPDF": @[@"Export as PDF...",  @"匯出為 PDF...",  @"导出为 PDF...",  @"PDF としてエクスポート...",  @"PDF로 내보내기..."],
         @"viewIn":        @[@"Zoom In", @"放大", @"放大", @"拡大", @"확대"],
         @"viewOut":       @[@"Zoom Out", @"縮小", @"缩小", @"縮小", @"축소"],
         @"viewReset":     @[@"Actual Size", @"實際大小", @"实际大小", @"實際のサイズ", @"실제 크기"],
@@ -77,6 +80,15 @@ void goOpenFileCallback(const char *path);
     NSMenu *fileMenu = [[NSMenu alloc] initWithTitle:t(@"menuFile")];
     [fileMenu addItemWithTitle:t(@"fileOpen") action:@selector(menuOpen) keyEquivalent:@"o"];
     [fileMenu addItemWithTitle:t(@"fileReload") action:@selector(menuReload) keyEquivalent:@"r"];
+    [fileMenu addItem:[NSMenuItem separatorItem]];
+    // Export submenu
+    NSMenuItem *exportItem = [[NSMenuItem alloc] init];
+    [exportItem setTitle:t(@"menuExport")];
+    NSMenu *exportMenu = [[NSMenu alloc] init];
+    [exportMenu addItemWithTitle:t(@"fileExportHTML") action:@selector(menuExportHTML) keyEquivalent:@""];
+    [exportMenu addItemWithTitle:t(@"fileExportPDF") action:@selector(menuExportPDF) keyEquivalent:@""];
+    [exportItem setSubmenu:exportMenu];
+    [fileMenu addItem:exportItem];
     [fileItem setSubmenu:fileMenu];
     [mainMenu addItem:fileItem];
 
@@ -110,6 +122,8 @@ void goOpenFileCallback(const char *path);
 - (void)menuZoomIn      { goMenuCallback(6); }
 - (void)menuZoomOut     { goMenuCallback(7); }
 - (void)menuZoomReset   { goMenuCallback(8); }
+- (void)menuExportHTML  { goMenuCallback(12); }
+- (void)menuExportPDF   { goMenuCallback(13); }
 - (void)menuFullscreen  {
     NSWindow *window = [NSApp keyWindow];
     if (window && [window respondsToSelector:@selector(toggleFullScreen:)]) {

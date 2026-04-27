@@ -740,6 +740,18 @@ func main() {
 			wv.Eval("window.zoomOut && window.zoomOut()")
 		case MenuZoomReset:
 			wv.Eval("window.zoomReset && window.zoomReset()")
+		case MenuExportHTML:
+			fmt.Fprintf(os.Stderr, "[MENU] ExportHTML triggered, calling wv.Dispatch\n")
+			wv.Dispatch(func() {
+				fmt.Fprintf(os.Stderr, "[MENU] Dispatch running exportHTML\n")
+				exportHTML()
+			})
+		case MenuExportPDF:
+			fmt.Fprintf(os.Stderr, "[MENU] ExportPDF triggered, calling wv.Dispatch\n")
+			wv.Dispatch(func() {
+				fmt.Fprintf(os.Stderr, "[MENU] Dispatch running exportPDF\n")
+				exportPDF()
+			})
 		}
 	})
 
@@ -814,6 +826,7 @@ func main() {
 			wv.Eval(getConfigJS())
 		}
 	})
+
 
 	// config is injected into htmlTemplate via _initConfig script
 	if currentFile == "" {

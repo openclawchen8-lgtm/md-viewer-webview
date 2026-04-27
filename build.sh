@@ -50,6 +50,7 @@ install_name_tool -add_rpath ".build/release/" "$APP_NAME"
 # 5. Move executable to bundle
 echo "🚚 Moving executable to bundle..."
 cp $APP_NAME "$MACOS_DIR/"
+ls -ltah $APP_NAME "$MACOS_DIR/"
 
 echo "✅ Build complete!"
 echo "👉 You can now run the app via: ./$APP_NAME"
