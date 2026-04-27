@@ -16,6 +16,7 @@ type Config struct {
 	FontFamily      string  `json:"fontFamily"`
 	FontSize        int     `json:"fontSize"`
 	Language        string  `json:"language"`
+	ShowLineNumbers bool    `json:"showLineNumbers"`
 }
 
 var currentConfig Config
@@ -113,6 +114,12 @@ func SetLanguage(lang string) error {
 	return saveConfig()
 }
 
+// SetLineNumbers updates the show line numbers preference and persists it.
+func SetLineNumbers(show bool) error {
+	currentConfig.ShowLineNumbers = show
+	return saveConfig()
+}
+
 // GetConfig returns a copy of the current config.
 func GetConfig() Config {
 	return currentConfig
@@ -121,12 +128,13 @@ func GetConfig() Config {
 // ConfigToJS returns a JS snippet that sets window.mdConfig.
 func ConfigToJS() string {
 	return fmt.Sprintf(
-		`window.mdConfig = {zoomSensitivity: %d, theme: %q, zoomLevel: %f, fontFamily: %q, fontSize: %d, language: %q};`,
+		`window.mdConfig = {zoomSensitivity: %d, theme: %q, zoomLevel: %f, fontFamily: %q, fontSize: %d, language: %q, showLineNumbers: %t};`,
 		currentConfig.ZoomSensitivity,
 		currentConfig.Theme,
 		currentConfig.ZoomLevel,
 		currentConfig.FontFamily,
 		currentConfig.FontSize,
 		currentConfig.Language,
+		currentConfig.ShowLineNumbers,
 	)
 }

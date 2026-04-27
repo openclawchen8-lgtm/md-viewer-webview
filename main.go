@@ -412,6 +412,60 @@ window.applyLanguage = function(lang) {
   var esTitle = document.querySelector('.empty-state-title'); if (esTitle) esTitle.textContent = t.noFile;
   var esHint = document.querySelector('.empty-state div:last-child'); if (esHint) esHint.textContent = t.hint;
 };
+
+window.applyLineNumbers = function(show) {
+  var container = document.getElementById('mdContent');
+  if (!container) return;
+  if (show) {
+    container.classList.add('line-numbers-mode');
+    document.querySelectorAll('pre code').forEach(function(codeBlock) {
+      if (codeBlock.querySelector('.line-number')) return;
+      var text = codeBlock.innerText;
+      var lines = text.split('\n');
+      if (lines[lines.length-1] === '') lines.pop();
+      var newHtml = '';
+      lines.forEach(function(line, index) {
+        newHtml += '<span class="line-number">' + (index + 1) + '</span><span class="line-content">' + (line || ' ') + '</span>\n';
+      });
+      codeBlock.innerHTML = newHtml;
+    });
+  } else {
+    container.classList.remove('line-numbers-mode');
+  }
+};
+
+window.initCodeBlocks = function() {
+  document.querySelectorAll('pre').forEach(function(pre) {
+    if (pre.querySelector('.code-copy-btn')) return;
+    var btn = document.createElement('button');
+    btn.className = 'code-copy-btn';
+    btn.innerText = (window._t && window._t.copy) || 'Copy';
+    btn.onclick = function() {
+      var code = pre.querySelector('code');
+      var text = '';
+      var contentSpans = code.querySelectorAll('.line-content');
+      if (contentSpans.length > 0) {
+        text = Array.from(contentSpans).map(el => el.innerText).join('\n');
+      } else {
+        text = code.innerText;
+      }
+      navigator.clipboard.writeText(text).then(function() {
+        btn.innerText = (window._t && window._t.copied) || 'Copied!';
+        btn.classList.add('copied');
+        setTimeout(function() {
+          btn.innerText = (window._t && window._t.copy) || 'Copy';
+          btn.classList.remove('copied');
+        }, 2000);
+      });
+    };
+    pre.appendChild(btn);
+  });
+  
+  var cfg = window.mdConfig || window._initConfig;
+  if (cfg && cfg.showLineNumbers) {
+    window.applyLineNumbers(true);
+  }
+};
 window.showSettingsPanel = function() {
   // Delegate to toggle (opens if closed)
   var el = document.getElementById('settingsOverlay');
@@ -466,6 +520,8 @@ window.toggleSettingsPanel = function() {
       if (fs && cfg) fs.value = cfg.fontSize || 16;
       var lang = document.getElementById('language');
       if (lang && cfg) lang.value = cfg.language || 'zhTW';
+      var ln = document.getElementById('showLineNumbers');
+      if (ln && cfg) ln.checked = !!cfg.showLineNumbers;
     }
   }
 };
@@ -595,6 +651,7 @@ document.addEventListener('DOMContentLoaded', function() {
     window.applyTheme('auto');
     window.applyLanguage('zhTW');
   }
+  window.initCodeBlocks();
   if (window.hljs) hljs.highlightAll();
 });
   var themeSelect = document.getElementById('themeSelect');
@@ -657,6 +714,16 @@ document.addEventListener('DOMContentLoaded', function() {
   });
   var closeBtn = document.getElementById('settingsClose');
   if (closeBtn) closeBtn.addEventListener('click', window.hideSettingsPanel);
+
+  var lineNumsCheckbox = document.getElementById('showLineNumbers');
+  if (lineNumsCheckbox) {
+    lineNumsCheckbox.addEventListener('change', function() {
+      var val = this.checked;
+      window.applyLineNumbers(val);
+      if (window.saveLineNumbers) window.saveLineNumbers(val);
+      if (window.mdConfig) window.mdConfig.showLineNumbers = val;
+    });
+  }
 
   // Intercept all link clicks and handle appropriately
   document.addEventListener('click', function(e) {
