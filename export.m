@@ -8,8 +8,7 @@ void goExportPDFResult(const char *path, const char *errorMsg);
 
 // ──────────────────────────────────────────────────────────────────────────────
 // ExportHelper: hidden WKWebView + NSSavePanel for PDF/HTML export.
-// All UI (NSSavePanel, WKWebView) runs on the main thread via dispatch_async.
-// goExport*Result callbacks fire on the main thread; Go waits on a channel.
+// All ObjC work is dispatched to the main queue. C exports return immediately.
 // ──────────────────────────────────────────────────────────────────────────────
 @interface ExportHelper : NSObject <WKNavigationDelegate>
 
@@ -43,11 +42,7 @@ void goExportPDFResult(const char *path, const char *errorMsg);
     return self;
 }
 
-#pragma mark - HTML Export
-
 - (void)doExportHTML:(NSString *)html name:(NSString *)name {
-    // Enqueue to main thread and return immediately. The Go goroutine
-    // will wait on exportCh; the completionHandler fires later.
     dispatch_async(dispatch_get_main_queue(), ^{
         NSSavePanel *panel = [NSSavePanel savePanel];
         panel.nameFieldStringValue = [name stringByAppendingPathExtension:@"html"];
@@ -72,8 +67,6 @@ void goExportPDFResult(const char *path, const char *errorMsg);
     });
 }
 
-#pragma mark - PDF Export
-
 - (void)doExportPDF:(NSString *)html name:(NSString *)name {
     dispatch_async(dispatch_get_main_queue(), ^{
         NSSavePanel *panel = [NSSavePanel savePanel];
@@ -92,8 +85,6 @@ void goExportPDFResult(const char *path, const char *errorMsg);
         [self.hiddenWV loadHTMLString:html baseURL:nil];
     });
 }
-
-#pragma mark - WKNavigationDelegate (PDF)
 
 - (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
     if (self.pdfSavePath == nil) return;
@@ -130,23 +121,16 @@ void goExportPDFResult(const char *path, const char *errorMsg);
 
 @end
 
-// ─── Singleton ───────────────────────────────────────────────────────────────
-
 static ExportHelper *_sharedExportHelper = nil;
 static dispatch_once_t _exportOnceToken;
 
 ExportHelper *GetExportHelper(void) {
     dispatch_once(&_exportOnceToken, ^{
-        // This block runs on the FIRST caller's thread. All callers come through
-        // wv.Dispatch which dispatches to the main queue, so this is always main.
+        // Synchronous init so hiddenWV is ready before first call returns.
         _sharedExportHelper = [[ExportHelper alloc] init];
     });
     return _sharedExportHelper;
 }
-
-// ─── C exports ─────────────────────────────────────────────────────────────
-// Both functions are non-blocking: they enqueue work to the main queue and
-// return immediately. The Go goroutine waits on a channel for the callback.
 
 void ExportHTML(const char *htmlUTF8, const char *defaultNameUTF8) {
     NSString *html = [NSString stringWithUTF8String:htmlUTF8];
