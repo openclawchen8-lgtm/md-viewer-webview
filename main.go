@@ -100,8 +100,8 @@ body {
 .markdown-body a { color: var(--color-accent-fg); text-decoration: none; }
 .markdown-body a:hover { text-decoration: underline; }
 @media print {
-  body { background: white !important; color: black !important; padding: 0 !important; }
-  .markdown-body { max-width: 100% !important; margin: 0 !important; padding: 2cm !important; }
+  html, body { height: auto !important; overflow: visible !important; min-height: 0 !important; }
+  .markdown-body { height: auto !important; overflow: visible !important; max-width: 100% !important; margin: 0 !important; padding: 2cm !important; }
   .keyboard-hint, .drop-zone, .settings-overlay { display: none !important; }
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
 }

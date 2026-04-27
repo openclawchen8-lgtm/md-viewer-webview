@@ -62,32 +62,59 @@ static PDFExportDelegate *_pdfDelegate = nil;
     if (self.didExport) return;
     self.didExport = YES;
 
-    NSLog(@"[PDF] didFinishNavigation called, starting PDF generation...");
+    NSLog(@"[PDF] didFinishNavigation called, waiting for layout...");
 
-    [webView createPDFWithConfiguration:[[WKPDFConfiguration alloc] init]
-                      completionHandler:^(NSData *pdfData, NSError *error) {
-        if (error || !pdfData) {
-            NSLog(@"[PDF] createPDF error: %@", error);
-            goExportPDFResult(NULL, [error.localizedDescription UTF8String]);
-        } else {
-            NSError *writeErr = nil;
-            BOOL ok = [pdfData writeToFile:self.savePath options:NSDataWritingAtomic error:&writeErr];
-            if (ok) {
-                NSLog(@"[PDF] saved to %@", self.savePath);
-                goExportPDFResult([self.savePath UTF8String], NULL);
-            } else {
-                NSLog(@"[PDF] write error: %@", writeErr);
-                goExportPDFResult(NULL, [writeErr.localizedDescription UTF8String]);
-            }
-        }
+    // 1. 先等待 JS/高亮渲染完成
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        [webView evaluateJavaScript:@"Math.max(document.body.scrollHeight, document.body.offsetHeight, document.documentElement.clientHeight, document.documentElement.scrollHeight, document.documentElement.offsetHeight)"
+                  completionHandler:^(id result, NSError *error) {
+            
+            CGFloat height = [result floatValue];
+            CGFloat width = webView.bounds.size.width;
+            NSLog(@"[PDF] Calculated content height: %f", height);
 
-        // 恢復原本的 delegate 與頁面
-        webView.navigationDelegate = self.previousDelegate;
-        if (self.originalHTML) {
-            [webView loadHTMLString:self.originalHTML baseURL:nil];
-        }
-        _pdfDelegate = nil;
-    }];
+            // 2. 暫時調整 WebView 的 Frame 高度，確保 WebKit 會繪製所有區域
+            NSRect originalFrame = webView.frame;
+            NSRect exportFrame = originalFrame;
+            exportFrame.size.height = height;
+            webView.frame = exportFrame;
+
+            // 3. 調整 Frame 後稍等一下讓 Layout 生效
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                WKPDFConfiguration *config = [[WKPDFConfiguration alloc] init];
+                config.rect = CGRectMake(0, 0, width, height);
+
+                [webView createPDFWithConfiguration:config
+                                  completionHandler:^(NSData *pdfData, NSError *error) {
+                    
+                    // 恢復 Frame
+                    webView.frame = originalFrame;
+
+                    if (error || !pdfData) {
+                        NSLog(@"[PDF] createPDF error: %@", error);
+                        goExportPDFResult(NULL, [error.localizedDescription UTF8String]);
+                    } else {
+                        NSError *writeErr = nil;
+                        BOOL ok = [pdfData writeToFile:self.savePath options:NSDataWritingAtomic error:&writeErr];
+                        if (ok) {
+                            NSLog(@"[PDF] saved to %@", self.savePath);
+                            goExportPDFResult([self.savePath UTF8String], NULL);
+                        } else {
+                            NSLog(@"[PDF] write error: %@", writeErr);
+                            goExportPDFResult(NULL, [writeErr.localizedDescription UTF8String]);
+                        }
+                    }
+
+                    // 恢復 Delegate 與內容
+                    webView.navigationDelegate = self.previousDelegate;
+                    if (self.originalHTML) {
+                        [webView loadHTMLString:self.originalHTML baseURL:nil];
+                    }
+                    _pdfDelegate = nil;
+                }];
+            });
+        }];
+    });
 }
 
 - (void)webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error {
