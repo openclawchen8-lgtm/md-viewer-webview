@@ -99,7 +99,7 @@ body {
 .markdown-body p { margin-bottom: 1em; }
 .markdown-body a { color: var(--color-accent-fg); text-decoration: none; }
 .markdown-body a:hover { text-decoration: underline; }
-@media print {
+@media print, .is-exporting {
   html, body { height: auto !important; overflow: visible !important; min-height: 0 !important; }
   .markdown-body { height: auto !important; overflow: visible !important; max-width: 100% !important; margin: 0 !important; padding: 2cm !important; }
   .keyboard-hint, .drop-zone, .settings-overlay { display: none !important; }
@@ -142,7 +142,11 @@ body {
   font-size: 11px; color: var(--color-fg-muted);
   background: var(--color-canvas-subtle);
   border: 1px solid var(--color-border-default);
-  padding: 4px 8px; border-radius: 4px; opacity: 0.7;
+  padding: 4px 8px; border-radius: 4px; opacity: 0.9; z-index: 99999;
+  pointer-events: none;
+}
+@media print, .is-exporting {
+  .keyboard-hint, .drop-zone, .settings-overlay, #zoomIndicator { display: none !important; }
 }
 /* Drop Zone Styles */
 .drop-zone {
