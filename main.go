@@ -151,6 +151,35 @@ body {
   padding: 1rem;
   overflow-x: auto;
   margin-bottom: 1.2em;
+  position: relative; /* 為複製按鈕定位 */
+}
+.code-copy-btn {
+  position: absolute; top: 8px; right: 8px;
+  padding: 4px 8px; font-size: 11px;
+  background: var(--color-canvas-default);
+  color: var(--color-fg-muted);
+  border: 1px solid var(--color-border-default);
+  border-radius: 4px; cursor: pointer; opacity: 0;
+  transition: opacity 0.2s, background 0.2s;
+  z-index: 10;
+}
+.markdown-body pre:hover .code-copy-btn { opacity: 1; }
+.code-copy-btn:hover { background: var(--color-accent-fg); color: white; border-color: var(--color-accent-fg); }
+.code-copy-btn.copied { background: var(--color-success-fg); color: white; border-color: var(--color-success-fg); }
+
+/* 行號樣式 */
+.line-numbers-mode code {
+  display: grid;
+  grid-template-columns: minmax(30px, auto) 1fr;
+  column-gap: 15px;
+}
+.line-number {
+  color: var(--color-fg-muted);
+  text-align: right;
+  user-select: none;
+  border-right: 1px solid var(--color-border-default);
+  padding-right: 10px;
+  opacity: 0.5;
 }
 .markdown-body pre code { background: none; border: none; padding: 0; font-size: 13px; line-height: 1.6; }
 .markdown-body blockquote { border-left: 4px solid var(--color-border-default); padding-left: 1rem; color: var(--color-fg-muted); margin-bottom: 1em; }
@@ -295,6 +324,10 @@ const htmlTemplate = `<!DOCTYPE html>
         <option value="ja">日本語</option>
         <option value="ko">한국어</option>
       </select>
+    </div>
+    <div class="setting-row" style="display:flex; align-items:center; justify-content:space-between;">
+      <div class="setting-label" style="margin-bottom:0">顯示行號</div>
+      <input type="checkbox" id="showLineNumbers" style="width:auto; height:20px; width:20px; cursor:pointer;">
     </div>
   </div>
 </div>
