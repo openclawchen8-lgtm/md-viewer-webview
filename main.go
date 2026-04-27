@@ -99,10 +99,15 @@ body {
 .markdown-body p { margin-bottom: 1em; }
 .markdown-body a { color: var(--color-accent-fg); text-decoration: none; }
 .markdown-body a:hover { text-decoration: underline; }
+@media print {
+  .keyboard-hint, .drop-zone, .settings-overlay, #zoomIndicator { display: none !important; }
+}
+.is-exporting .keyboard-hint, .is-exporting .drop-zone, .is-exporting .settings-overlay, .is-exporting #zoomIndicator {
+  display: none !important;
+}
 @media print, .is-exporting {
   html, body { height: auto !important; overflow: visible !important; min-height: 0 !important; }
   .markdown-body { height: auto !important; overflow: visible !important; max-width: 100% !important; margin: 0 !important; padding: 2cm !important; }
-  .keyboard-hint, .drop-zone, .settings-overlay { display: none !important; }
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
 }
 .markdown-body code {

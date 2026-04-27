@@ -103,10 +103,13 @@ void ExportPDF(const char *htmlUTF8, const char *defaultNameUTF8, const char *ba
                     
                     // 4. 無論如何都要恢復環境，防止 UI 消失
                     wv.frame = originalFrame;
+                    NSString *safeZoom = (oldZoom && ![oldZoom isEqual:[NSNull null]]) ? oldZoom : @"1.0";
+                    NSString *safeScrollY = (oldScrollY && ![oldScrollY isEqual:[NSNull null]]) ? [oldScrollY stringValue] : @"0";
+
                     NSString *restoreJS = [NSString stringWithFormat:@"\
                         document.body.classList.remove('is-exporting');\
                         document.body.style.zoom = '%@';\
-                        window.scrollTo(0, %@);", oldZoom, oldScrollY];
+                        window.scrollTo(0, %@);", safeZoom, safeScrollY];
                     [wv evaluateJavaScript:restoreJS completionHandler:nil];
 
                     if (error || !pdfData) {
