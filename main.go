@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"md-viewer-app/core"
+	"md-viewer/core"
 	"github.com/webview/webview_go"
 )
 
@@ -672,6 +672,8 @@ func loadFile(path string) {
 	}
 
 	currentFile = absPath
+	// Keep exportContent in sync for export feature (supports drag-and-drop scenarios)
+	exportContent = string(data)
 	if currentWV == nil {
 		return
 	}
@@ -741,17 +743,9 @@ func main() {
 		case MenuZoomReset:
 			wv.Eval("window.zoomReset && window.zoomReset()")
 		case MenuExportHTML:
-			fmt.Fprintf(os.Stderr, "[MENU] ExportHTML triggered, calling wv.Dispatch\n")
-			wv.Dispatch(func() {
-				fmt.Fprintf(os.Stderr, "[MENU] Dispatch running exportHTML\n")
-				exportHTML()
-			})
+			exportHTML()
 		case MenuExportPDF:
-			fmt.Fprintf(os.Stderr, "[MENU] ExportPDF triggered, calling wv.Dispatch\n")
-			wv.Dispatch(func() {
-				fmt.Fprintf(os.Stderr, "[MENU] Dispatch running exportPDF\n")
-				exportPDF()
-			})
+			exportPDF()
 		}
 	})
 
@@ -793,6 +787,7 @@ func main() {
 	})
 	wv.Bind("loadFileContent", func(filename, content string) {
 		currentFile = "(dragged): " + filename
+		exportContent = content // keep exportContent in sync for export feature
 		if currentWV != nil {
 			currentWV.SetTitle(filename + " - md-viewer")
 			currentWV.SetHtml(renderMD(content))
@@ -818,15 +813,13 @@ func main() {
 			fmt.Fprintln(os.Stderr, "Failed to save font:", err)
 		}
 	})
-	wv.Bind("saveLanguage", func(lang string) {
-		if err := SetLanguage(lang); err != nil {
+	wv.Bind("saveLanguage", func(lang string) {		if err := SetLanguage(lang); err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to save language:", err)
 		} else {
 			UpdateMenuLanguage(lang)
 			wv.Eval(getConfigJS())
 		}
 	})
-
 
 	// config is injected into htmlTemplate via _initConfig script
 	if currentFile == "" {

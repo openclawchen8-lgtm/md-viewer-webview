@@ -1,4 +1,4 @@
-module md-viewer-app
+module md-viewer
 
 go 1.26.1
 

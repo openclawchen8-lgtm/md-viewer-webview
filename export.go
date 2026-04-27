@@ -16,52 +16,48 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
+	"unicode"
+	"unsafe"
 )
 
-// ─── Callback ───────────────────────────────────────────────────────────────
+// ─── State ──────────────────────────────────────────────────────────────────
 
-type exportResult struct {
-	path string
-	err  error
-}
+var exportActive int32
 
-var exportCh chan exportResult // non-nil while export is in-flight
+// exportContent holds the in-memory markdown content to support drag-and-drop exports.
+var exportContent string
+
+// exportCh carries the result from the ObjC callback to the waiting goroutine.
+// Unbuffered so the goroutine must reach the receive BEFORE the callback fires,
+// preventing any race condition.
+var exportCh chan error
 
 //export goExportHTMLResult
 func goExportHTMLResult(path, errorMsg *C.char) {
-	if exportCh == nil {
-		return
-	}
-	r := exportResult{}
-	if path != nil {
-		r.path = C.GoString(path)
-	} else if errorMsg != nil {
-		r.err = fmt.Errorf("%s", C.GoString(errorMsg))
-	} else {
-		r.err = fmt.Errorf("cancelled")
+	var err error
+	if errorMsg != nil {
+		err = fmt.Errorf("%s", C.GoString(errorMsg))
+	} else if path == nil {
+		err = fmt.Errorf("cancelled")
 	}
 	select {
-	case exportCh <- r:
+	case exportCh <- err:
 	default:
-		// nobody waiting (shouldn't happen with non-blocking launch)
 	}
+	_ = path // result delivered via exportCh; path available if needed
 }
 
 //export goExportPDFResult
 func goExportPDFResult(path, errorMsg *C.char) {
-	if exportCh == nil {
-		return
-	}
-	r := exportResult{}
-	if path != nil {
-		r.path = C.GoString(path)
-	} else if errorMsg != nil {
-		r.err = fmt.Errorf("%s", C.GoString(errorMsg))
-	} else {
-		r.err = fmt.Errorf("cancelled")
+	var err error
+	if errorMsg != nil {
+		err = fmt.Errorf("%s", C.GoString(errorMsg))
+	} else if path == nil {
+		err = fmt.Errorf("cancelled")
 	}
 	select {
-	case exportCh <- r:
+	case exportCh <- err:
 	default:
 	}
 }
@@ -76,109 +72,174 @@ func getExportFilename() string {
 	return base
 }
 
-// buildExportJS extracts current rendered content as a standalone HTML document.
-func buildExportJS() string {
-	return `(function(){
-		var md = document.getElementById('mdContent');
-		var body = document.body;
-		if (!md || !body) return '';
-		var theme = body.getAttribute ? body.getAttribute('data-theme') : 'auto';
-		var lang  = document.documentElement.lang || 'en';
-		var zoom  = body.style.zoom || '1';
-		var styles = '';
-		var s = document.querySelectorAll('style');
-		for (var i=0;i<s.length;i++) styles += s[i].textContent + '\n';
-		var links = '';
-		document.querySelectorAll('link[rel="stylesheet"]').forEach(function(el){
-			links += '<link rel="stylesheet" href="' + el.href + '">\n';
-		});
-		var scripts = document.querySelectorAll('script[src]');
-		var hljs = scripts.length > 0
-			? '<script src="' + scripts[0].src + '"></script>\n'
-			: '';
-		return '<!DOCTYPE html>\n<html lang="' + lang + '">\n<head>\n<meta charset="UTF-8">\n<meta name="viewport" content="width=device-width,initial-scale=1">\n<style>' + styles + '</style>\n' + links + hljs + '</head>\n<body data-theme="' + theme + '" style="zoom:' + zoom + ';">' + md.outerHTML + '\n<script>hljs && hljs.highlightAll && hljs.highlightAll();</script>\n</body>\n</html>';
-	})()`
+// buildExportHTML renders the current markdown content into a clean export HTML.
+// Supports file-loaded and drag-and-drop via in-memory exportContent.
+func buildExportHTML() string {
+	var content string
+
+	if exportContent != "" {
+		content = exportContent
+	} else if currentFile != "" && !strings.HasPrefix(currentFile, "(dragged)") {
+		data, err := os.ReadFile(currentFile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[Export] failed to read file: %v\n", err)
+			return ""
+		}
+		content = string(data)
+	}
+
+	if content == "" {
+		fmt.Fprintln(os.Stderr, "[Export] no content available")
+		return ""
+	}
+
+	html, err := renderer.Render(content)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[Export] failed to render: %v\n", err)
+		return ""
+	}
+
+	html = fmt.Sprintf(htmlTemplate, cssContent, html)
+
+	// Strip app-only UI elements (drop-zone, keyboard-hint, settings-overlay).
+	// Uses nested-tag-aware removal to handle the settings-overlay's inner divs.
+	html = removeHTMLBlock(html, `<div class="drop-zone"`, `</div>`)
+	html = removeHTMLBlock(html, `<div class="keyboard-hint"`, `</div>`)
+	html = removeHTMLBlock(html, `<div class="settings-overlay"`, `</div>`)
+	// Remove highlight.js CDN (no JS runtime in standalone HTML export)
+	html = removeHTMLBlock(html, `<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js`, `</link>`)
+	html = removeHTMLBlock(html, `<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js`, `</script>`)
+
+	// Apply current theme so the exported file has consistent appearance
+	theme := currentConfig.Theme
+	if theme == "" || theme == "auto" {
+		theme = "light"
+	}
+	html = strings.Replace(html, `data-theme="auto"`, fmt.Sprintf(`data-theme=%q`, theme), 1)
+
+	return html
+}
+
+// removeHTMLBlock removes the first HTML block from startTag to its matching endTag,
+// correctly handling nested block-level elements using a depth counter.
+func removeHTMLBlock(html, startTag, endTag string) string {
+	idx := strings.Index(html, startTag)
+	if idx == -1 {
+		return html
+	}
+
+	depth := 1
+	searchFrom := idx + len(startTag)
+	for i := searchFrom; i <= len(html)-len(endTag) && depth > 0; i++ {
+		if html[i:i+len(endTag)] == endTag {
+			depth--
+			if depth == 0 {
+				return html[:idx] + html[i+len(endTag):]
+			}
+			continue
+		}
+		// Check for nested opening block tags
+		if html[i] == '<' && i+1 < len(html) {
+			c := html[i+1]
+			if c != '/' && c != '!' && c != '?' && !unicode.IsSpace(rune(c)) {
+				j := i + 1
+				for j < len(html) && (unicode.IsLetter(rune(html[j])) || unicode.IsDigit(rune(html[j])) || html[j] == '-' || html[j] == '_') {
+					j++
+				}
+				if j > i+1 && isBlockTag(html[i+1:j]) {
+					depth++
+				}
+			}
+		}
+	}
+	return html[:idx]
+}
+
+// isBlockTag reports whether tagName is a block-level HTML tag.
+func isBlockTag(name string) bool {
+	switch strings.ToLower(name) {
+	case "div", "section", "article", "aside", "header", "footer", "nav",
+		"main", "figure", "figcaption", "details", "summary",
+		"blockquote", "fieldset", "form", "table", "thead", "tbody",
+		"tfoot", "tr", "ul", "ol", "li", "dl", "dt", "dd", "p", "h1",
+		"h2", "h3", "h4", "h5", "h6", "hr", "pre", "address":
+		return true
+	}
+	return false
 }
 
 // ─── exportHTML ─────────────────────────────────────────────────────────────
-
 func exportHTML() {
-	if currentWV == nil {
+	if !atomic.CompareAndSwapInt32(&exportActive, 0, 1) {
+		fmt.Fprintln(os.Stderr, "[ExportHTML] already in progress, skipping")
 		return
 	}
-	// Non-blocking: channel is nil or already has a pending result
-	if exportCh != nil {
+	defer atomic.StoreInt32(&exportActive, 0)
+
+	html := buildExportHTML()
+	if html == "" {
+		fmt.Fprintln(os.Stderr, "[ExportHTML] empty HTML, nothing to export")
 		return
 	}
-	exportCh = make(chan exportResult, 1)
 
-	// wv.Eval must run on the main WebView thread via Dispatch.
-	// We dispatch the JS eval to the WebView, which runs immediately,
-	// then schedules the callback on the same thread. The non-blocking
-	// select means we return immediately; the callback fires asynchronously.
-	wv.Dispatch(func() {
-		js := "try{ window.onExportHTML && window.onExportHTML(" + buildExportJS() + "); } catch(e){ window.onExportHTML && window.onExportHTML(''); }"
-		currentWV.Eval(js)
-	})
+	// Unbuffered: goroutine reaches receive BEFORE callback fires → no race.
+	exportCh = make(chan error)
 
-	// Wait for callback (or timeout) without blocking the WebView main thread.
-	// Since exportCh is buffered (cap=1), this goroutine is independent
-	// of wv.Eval and won't cause deadlock.
-	go func() {
-		select {
-		case r := <-exportCh:
-			exportCh = nil
-			if r.err != nil {
-				if r.err.Error() == "cancelled" {
-					fmt.Fprintln(os.Stderr, "[ExportHTML] cancelled")
-				} else {
-					fmt.Fprintf(os.Stderr, "[ExportHTML] Error: %v\n", r.err)
-				}
-			} else {
-				fmt.Fprintf(os.Stderr, "[ExportHTML] Saved: %s\n", r.path)
-			}
-		case <-exportDone:
-			exportCh = nil
+	fmt.Fprintf(os.Stderr, "[ExportHTML] calling C.ExportHTML (html len=%d)\n", len(html))
+	cName := C.CString(getExportFilename())
+	cHTML := C.CString(html)
+	C.ExportHTML(cHTML, cName)
+	C.free(unsafe.Pointer(cName))
+	C.free(unsafe.Pointer(cHTML))
+
+	// Wait for ObjC callback. It fires asynchronously on the main thread.
+	err := <-exportCh
+	exportCh = nil
+
+	if err != nil {
+		if err.Error() == "cancelled" {
+			fmt.Fprintln(os.Stderr, "[ExportHTML] cancelled")
+		} else {
+			fmt.Fprintf(os.Stderr, "[ExportHTML] Error: %v\n", err)
 		}
-	}()
+	} else {
+		fmt.Fprintln(os.Stderr, "[ExportHTML] Saved")
+	}
 }
 
 // ─── exportPDF ──────────────────────────────────────────────────────────────
-
 func exportPDF() {
-	if currentWV == nil {
-		fmt.Fprintln(os.Stderr, "[Export] currentWV is nil, returning")
+	if !atomic.CompareAndSwapInt32(&exportActive, 0, 1) {
+		fmt.Fprintln(os.Stderr, "[ExportPDF] already in progress, skipping")
 		return
 	}
-	if exportCh != nil {
-		fmt.Fprintln(os.Stderr, "[Export] export already in progress, skipping")
+	defer atomic.StoreInt32(&exportActive, 0)
+
+	html := buildExportHTML()
+	if html == "" {
+		fmt.Fprintln(os.Stderr, "[ExportPDF] empty HTML, nothing to export")
 		return
 	}
-	exportCh = make(chan exportResult, 1)
 
-	wv.Dispatch(func() {
-		js := "try{ window.onExportPDF && window.onExportPDF(" + buildExportJS() + "); } catch(e){ window.onExportPDF && window.onExportPDF(''); }"
-		currentWV.Eval(js)
-	})
+	exportCh = make(chan error)
 
-	go func() {
-		select {
-		case r := <-exportCh:
-			exportCh = nil
-			if r.err != nil {
-				if r.err.Error() == "cancelled" {
-					fmt.Fprintln(os.Stderr, "[ExportPDF] cancelled")
-				} else {
-					fmt.Fprintf(os.Stderr, "[ExportPDF] Error: %v\n", r.err)
-				}
-			} else {
-				fmt.Fprintf(os.Stderr, "[ExportPDF] Saved: %s\n", r.path)
-			}
-		case <-exportDone:
-			exportCh = nil
+	fmt.Fprintf(os.Stderr, "[ExportPDF] calling C.ExportPDF (html len=%d)\n", len(html))
+	cName := C.CString(getExportFilename())
+	cHTML := C.CString(html)
+	C.ExportPDF(cHTML, cName)
+	C.free(unsafe.Pointer(cName))
+	C.free(unsafe.Pointer(cHTML))
+
+	err := <-exportCh
+	exportCh = nil
+
+	if err != nil {
+		if err.Error() == "cancelled" {
+			fmt.Fprintln(os.Stderr, "[ExportPDF] cancelled")
+		} else {
+			fmt.Fprintf(os.Stderr, "[ExportPDF] Error: %v\n", err)
 		}
-	}()
+	} else {
+		fmt.Fprintln(os.Stderr, "[ExportPDF] Saved")
+	}
 }
-
-// exportDone is closed when the app is shutting down.
-var exportDone = make(chan struct{})

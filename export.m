@@ -3,21 +3,21 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-// Forward-declare Go-exported callbacks (cgo generates these in _cgo_export.h)
 void goExportHTMLResult(const char *path, const char *errorMsg);
 void goExportPDFResult(const char *path, const char *errorMsg);
 
 // ──────────────────────────────────────────────────────────────────────────────
 // ExportHelper: hidden WKWebView + NSSavePanel for PDF/HTML export.
-// PDF uses WKWebView.createPDF for pixel-perfect rendering.
+// All UI (NSSavePanel, WKWebView) runs on the main thread via dispatch_async.
+// goExport*Result callbacks fire on the main thread; Go waits on a channel.
 // ──────────────────────────────────────────────────────────────────────────────
 @interface ExportHelper : NSObject <WKNavigationDelegate>
 
 @property (nonatomic, strong) WKWebView *hiddenWV;
 @property (nonatomic, copy) NSString *pdfSavePath;
 
-- (void)exportHTML:(NSString *)html defaultName:(NSString *)defaultName;
-- (void)exportPDF:(NSString *)html defaultName:(NSString *)defaultName;
+- (void)doExportHTML:(NSString *)html name:(NSString *)name;
+- (void)doExportPDF:(NSString *)html name:(NSString *)name;
 
 @end
 
@@ -26,15 +26,15 @@ void goExportPDFResult(const char *path, const char *errorMsg);
 - (instancetype)init {
     self = [super init];
     if (self) {
-        WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
-
         NSWindow *hiddenWindow = [[NSWindow alloc]
             initWithContentRect:NSMakeRect(-10000, -10000, 1200, 800)
             styleMask:NSWindowStyleMaskBorderless
             backing:NSBackingStoreBuffered defer:YES];
         hiddenWindow.level = NSNormalWindowLevel;
-        hiddenWindow.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorStationary;
+        hiddenWindow.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces
+                                        | NSWindowCollectionBehaviorStationary;
 
+        WKWebViewConfiguration *config = [[WKWebViewConfiguration alloc] init];
         _hiddenWV = [[WKWebView alloc] initWithFrame:NSMakeRect(0, 0, 1200, 800)
                                         configuration:config];
         _hiddenWV.navigationDelegate = self;
@@ -45,40 +45,44 @@ void goExportPDFResult(const char *path, const char *errorMsg);
 
 #pragma mark - HTML Export
 
-- (void)exportHTML:(NSString *)html defaultName:(NSString *)defaultName {
-    NSSavePanel *panel = [NSSavePanel savePanel];
-    panel.nameFieldStringValue = [defaultName stringByAppendingPathExtension:@"html"];
-    panel.canCreateDirectories = YES;
-    panel.message = @"選擇匯出 HTML 的位置";
+- (void)doExportHTML:(NSString *)html name:(NSString *)name {
+    // Enqueue to main thread and return immediately. The Go goroutine
+    // will wait on exportCh; the completionHandler fires later.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSSavePanel *panel = [NSSavePanel savePanel];
+        panel.nameFieldStringValue = [name stringByAppendingPathExtension:@"html"];
+        panel.canCreateDirectories = YES;
+        panel.message = @"選擇匯出 HTML 的位置";
 
-    [panel beginSheetModalForWindow:[NSApp keyWindow] completionHandler:^(NSInteger result) {
+        NSInteger result = [panel runModal];
+
         if (result != NSModalResponseOK) {
             goExportHTMLResult(NULL, "cancelled");
-            return;
-        }
-
-        NSURL *url = panel.URL;
-        NSError *writeErr = nil;
-        NSData *data = [html dataUsingEncoding:NSUTF8StringEncoding];
-        BOOL ok = [data writeToURL:url options:NSDataWritingAtomic error:&writeErr];
-
-        if (ok) {
-            goExportHTMLResult([url.path UTF8String], NULL);
         } else {
-            goExportHTMLResult(NULL, [writeErr.localizedDescription UTF8String]);
+            NSURL *url = panel.URL;
+            NSError *writeErr = nil;
+            NSData *data = [html dataUsingEncoding:NSUTF8StringEncoding];
+            BOOL ok = [data writeToURL:url options:NSDataWritingAtomic error:&writeErr];
+            if (ok) {
+                goExportHTMLResult([url.path UTF8String], NULL);
+            } else {
+                goExportHTMLResult(NULL, [writeErr.localizedDescription UTF8String]);
+            }
         }
-    }];
+    });
 }
 
 #pragma mark - PDF Export
 
-- (void)exportPDF:(NSString *)html defaultName:(NSString *)defaultName {
-    NSSavePanel *panel = [NSSavePanel savePanel];
-    panel.nameFieldStringValue = [defaultName stringByAppendingPathExtension:@"pdf"];
-    panel.canCreateDirectories = YES;
-    panel.message = @"選擇匯出 PDF 的位置";
+- (void)doExportPDF:(NSString *)html name:(NSString *)name {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSSavePanel *panel = [NSSavePanel savePanel];
+        panel.nameFieldStringValue = [name stringByAppendingPathExtension:@"pdf"];
+        panel.canCreateDirectories = YES;
+        panel.message = @"選擇匯出 PDF 的位置";
 
-    [panel beginSheetModalForWindow:[NSApp keyWindow] completionHandler:^(NSInteger result) {
+        NSInteger result = [panel runModal];
+
         if (result != NSModalResponseOK) {
             goExportPDFResult(NULL, "cancelled");
             return;
@@ -86,7 +90,7 @@ void goExportPDFResult(const char *path, const char *errorMsg);
 
         self.pdfSavePath = [panel.URL path];
         [self.hiddenWV loadHTMLString:html baseURL:nil];
-    }];
+    });
 }
 
 #pragma mark - WKNavigationDelegate (PDF)
@@ -101,16 +105,14 @@ void goExportPDFResult(const char *path, const char *errorMsg);
                       completionHandler:^(NSData *pdfData, NSError *error) {
         if (error || !pdfData) {
             goExportPDFResult(NULL, [error.localizedDescription UTF8String]);
-            return;
-        }
-
-        NSError *writeErr = nil;
-        BOOL ok = [pdfData writeToFile:savePath options:NSDataWritingAtomic error:&writeErr];
-
-        if (ok) {
-            goExportPDFResult([savePath UTF8String], NULL);
         } else {
-            goExportPDFResult(NULL, [writeErr.localizedDescription UTF8String]);
+            NSError *writeErr = nil;
+            BOOL ok = [pdfData writeToFile:savePath options:NSDataWritingAtomic error:&writeErr];
+            if (ok) {
+                goExportPDFResult([savePath UTF8String], NULL);
+            } else {
+                goExportPDFResult(NULL, [writeErr.localizedDescription UTF8String]);
+            }
         }
     }];
 }
@@ -135,31 +137,25 @@ static dispatch_once_t _exportOnceToken;
 
 ExportHelper *GetExportHelper(void) {
     dispatch_once(&_exportOnceToken, ^{
+        // This block runs on the FIRST caller's thread. All callers come through
+        // wv.Dispatch which dispatches to the main queue, so this is always main.
         _sharedExportHelper = [[ExportHelper alloc] init];
     });
     return _sharedExportHelper;
 }
 
 // ─── C exports ─────────────────────────────────────────────────────────────
+// Both functions are non-blocking: they enqueue work to the main queue and
+// return immediately. The Go goroutine waits on a channel for the callback.
 
-// ExportHTML: shows save dialog, writes HTML string.
-// Calls goExportHTMLResult(path, NULL) on success or goExportHTMLResult(NULL, error) on failure.
 void ExportHTML(const char *htmlUTF8, const char *defaultNameUTF8) {
-    ExportHelper *helper = GetExportHelper();
     NSString *html = [NSString stringWithUTF8String:htmlUTF8];
     NSString *name = defaultNameUTF8 ? [NSString stringWithUTF8String:defaultNameUTF8] : @"untitled";
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [helper exportHTML:html defaultName:name];
-    });
+    [GetExportHelper() doExportHTML:html name:name];
 }
 
-// ExportPDF: shows save dialog, renders HTML→PDF via WKWebView.createPDF.
-// Calls goExportPDFResult(path, NULL) on success or goExportPDFResult(NULL, error) on failure.
 void ExportPDF(const char *htmlUTF8, const char *defaultNameUTF8) {
-    ExportHelper *helper = GetExportHelper();
     NSString *html = [NSString stringWithUTF8String:htmlUTF8];
     NSString *name = defaultNameUTF8 ? [NSString stringWithUTF8String:defaultNameUTF8] : @"untitled";
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [helper exportPDF:html defaultName:name];
-    });
+    [GetExportHelper() doExportPDF:html name:name];
 }
