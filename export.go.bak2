@@ -17,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"unicode"
 	"unsafe"
 )
 
@@ -87,7 +88,6 @@ func getExportFilename() string {
 }
 
 func buildExportHTML() string {
-	fmt.Fprintf(os.Stderr, "[buildExportHTML] called, exportContent=%d, currentFile=%q\n", len(exportContent), currentFile)
 	var content string
 
 	if exportContent != "" {
@@ -130,37 +130,35 @@ func buildExportHTML() string {
 }
 
 func removeHTMLBlock(html, startTag, endTag string) string {
-	// Handles BOTH self-closing tags (<link>, <meta>) and paired tags (<script>, <div>).
-	// For self-closing: find first '>' after startTag (even if attributes follow it).
-	// For paired: find first endTag after startTag.
-	startIdx := strings.Index(html, startTag)
-	if startIdx == -1 {
+	idx := strings.Index(html, startTag)
+	if idx == -1 {
 		return html
 	}
-	searchFrom := startIdx + len(startTag)
-	// Check if this is a self-closing tag: '>' appears before endTag
-	selfCloseIdx := -1
-	if endIdx := strings.Index(html[searchFrom:], ">"); endIdx != -1 {
-		selfCloseIdx = endIdx
-	}
-	hasEndTag := false
-	if endIdx := strings.Index(html[searchFrom:], endTag); endIdx != -1 {
-		hasEndTag = true
-		// Only treat as paired if endTag comes BEFORE the first '>'
-		if selfCloseIdx != -1 && endIdx > selfCloseIdx {
-			hasEndTag = false
+
+	depth := 1
+	searchFrom := idx + len(startTag)
+	for i := searchFrom; i <= len(html)-len(endTag) && depth > 0; i++ {
+		if html[i:i+len(endTag)] == endTag {
+			depth--
+			if depth == 0 {
+				return html[:idx] + html[i+len(endTag):]
+			}
+			continue
+		}
+		if html[i] == '<' && i+1 < len(html) {
+			c := html[i+1]
+			if c != '/' && c != '!' && c != '?' && !unicode.IsSpace(rune(c)) {
+				j := i + 1
+				for j < len(html) && (unicode.IsLetter(rune(html[j])) || unicode.IsDigit(rune(html[j])) || html[j] == '-' || html[j] == '_') {
+					j++
+				}
+				if j > i+1 && isBlockTag(html[i+1:j]) {
+					depth++
+				}
+			}
 		}
 	}
-	if selfCloseIdx != -1 && !hasEndTag {
-		// Self-closing tag: remove from startTag to first '>'
-		selfCloseIdx += searchFrom + 1
-		return html[:startIdx] + html[selfCloseIdx:]
-	}
-	if endIdx := strings.Index(html[searchFrom:], endTag); endIdx != -1 {
-		endIdx += searchFrom + len(endTag)
-		return html[:startIdx] + html[endIdx:]
-	}
-	return html[:startIdx]
+	return html[:idx]
 }
 
 func isBlockTag(name string) bool {

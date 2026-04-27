@@ -8,14 +8,16 @@ void goExportPDFResult(const char *path, const char *errorMsg);
 
 // ──────────────────────────────────────────────────────────────────────────────
 // ExportHelper: hidden WKWebView + NSSavePanel for PDF/HTML export.
-// Called on the main thread from Go menu callback (which itself is on the main
-// thread inside wv.Run()). Direct execution avoids dispatch_async deadlocks.
+// All ObjC work is dispatched to the main queue. C exports return immediately.
 // ──────────────────────────────────────────────────────────────────────────────
 @interface ExportHelper : NSObject <WKNavigationDelegate>
+
 @property (nonatomic, strong) WKWebView *hiddenWV;
 @property (nonatomic, copy) NSString *pdfSavePath;
+
 - (void)doExportHTML:(NSString *)html name:(NSString *)name;
 - (void)doExportPDF:(NSString *)html name:(NSString *)name;
+
 @end
 
 @implementation ExportHelper
@@ -41,63 +43,57 @@ void goExportPDFResult(const char *path, const char *errorMsg);
 }
 
 - (void)doExportHTML:(NSString *)html name:(NSString *)name {
-    NSSavePanel *panel = [NSSavePanel savePanel];
-    panel.nameFieldStringValue = [name stringByAppendingPathExtension:@"html"];
-    panel.canCreateDirectories = YES;
-    panel.message = @"選擇匯出 HTML 的位置";
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSSavePanel *panel = [NSSavePanel savePanel];
+        panel.nameFieldStringValue = [name stringByAppendingPathExtension:@"html"];
+        panel.canCreateDirectories = YES;
+        panel.message = @"選擇匯出 HTML 的位置";
 
-    NSInteger result = [panel runModal];
+        NSInteger result = [panel runModal];
 
-    if (result != NSModalResponseOK) {
-        goExportHTMLResult(NULL, "cancelled");
-    } else {
-        NSURL *url = panel.URL;
-        NSError *writeErr = nil;
-        NSData *data = [html dataUsingEncoding:NSUTF8StringEncoding];
-        BOOL ok = [data writeToURL:url options:NSDataWritingAtomic error:&writeErr];
-        if (ok) {
-            goExportHTMLResult([url.path UTF8String], NULL);
+        if (result != NSModalResponseOK) {
+            goExportHTMLResult(NULL, "cancelled");
         } else {
-            goExportHTMLResult(NULL, [writeErr.localizedDescription UTF8String]);
+            NSURL *url = panel.URL;
+            NSError *writeErr = nil;
+            NSData *data = [html dataUsingEncoding:NSUTF8StringEncoding];
+            BOOL ok = [data writeToURL:url options:NSDataWritingAtomic error:&writeErr];
+            if (ok) {
+                goExportHTMLResult([url.path UTF8String], NULL);
+            } else {
+                goExportHTMLResult(NULL, [writeErr.localizedDescription UTF8String]);
+            }
         }
-    }
+    });
 }
 
 - (void)doExportPDF:(NSString *)html name:(NSString *)name {
-    NSSavePanel *panel = [NSSavePanel savePanel];
-    panel.nameFieldStringValue = [name stringByAppendingPathExtension:@"pdf"];
-    panel.canCreateDirectories = YES;
-    panel.message = @"選擇匯出 PDF 的位置";
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSSavePanel *panel = [NSSavePanel savePanel];
+        panel.nameFieldStringValue = [name stringByAppendingPathExtension:@"pdf"];
+        panel.canCreateDirectories = YES;
+        panel.message = @"選擇匯出 PDF 的位置";
 
-    NSInteger result = [panel runModal];
+        NSInteger result = [panel runModal];
 
-    if (result != NSModalResponseOK) {
-        goExportPDFResult(NULL, "cancelled");
-        return;
-    }
+        if (result != NSModalResponseOK) {
+            goExportPDFResult(NULL, "cancelled");
+            return;
+        }
 
-    self.pdfSavePath = [panel.URL path];
-
-    // Timer backup: 800ms after load, trigger PDF generation.
-    // WKWebView may not fire didFinishNavigation for simple HTML.
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)),
-                   dispatch_get_main_queue(), ^{
-        [self triggerPDFGenerationIfNeeded];
+        self.pdfSavePath = [panel.URL path];
+        [self.hiddenWV loadHTMLString:html baseURL:nil];
     });
-
-    [self.hiddenWV loadHTMLString:html baseURL:nil];
 }
 
-// Called by timer AND by didFinishNavigation — whichever fires first clears the path.
-- (void)triggerPDFGenerationIfNeeded {
+- (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
     if (self.pdfSavePath == nil) return;
+
     NSString *savePath = self.pdfSavePath;
     self.pdfSavePath = nil;
 
-    WKPDFConfiguration *cfg = [[WKPDFConfiguration alloc] init];
-    cfg.rect = CGRectMake(0, 0, 1200, 0); // 0 height = auto content-fitted
-    [self.hiddenWV createPDFWithConfiguration:cfg
-                           completionHandler:^(NSData *pdfData, NSError *error) {
+    [webView createPDFWithConfiguration:[self pdfConfig]
+                      completionHandler:^(NSData *pdfData, NSError *error) {
         if (error || !pdfData) {
             goExportPDFResult(NULL, [error.localizedDescription UTF8String]);
         } else {
@@ -112,15 +108,15 @@ void goExportPDFResult(const char *path, const char *errorMsg);
     }];
 }
 
-- (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
-    [self triggerPDFGenerationIfNeeded];
-}
-
 - (void)webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error {
     if (self.pdfSavePath != nil) {
         self.pdfSavePath = nil;
         goExportPDFResult(NULL, [error.localizedDescription UTF8String]);
     }
+}
+
+- (WKPDFConfiguration *)pdfConfig {
+    return [[WKPDFConfiguration alloc] init];
 }
 
 @end
@@ -130,6 +126,7 @@ static dispatch_once_t _exportOnceToken;
 
 ExportHelper *GetExportHelper(void) {
     dispatch_once(&_exportOnceToken, ^{
+        // Synchronous init so hiddenWV is ready before first call returns.
         _sharedExportHelper = [[ExportHelper alloc] init];
     });
     return _sharedExportHelper;
