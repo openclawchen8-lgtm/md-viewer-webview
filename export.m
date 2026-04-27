@@ -54,23 +54,40 @@ void ExportHTML(const char *htmlUTF8, const char *defaultNameUTF8) {
 @property (nonatomic, assign) BOOL didExport;
 @end
 
+static PDFExportDelegate *_pdfDelegate = nil;
+
 @implementation PDFExportDelegate
 
 - (void)webView:(WKWebView *)webView didFinishNavigation:(WKNavigation *)navigation {
     if (self.didExport) return;
     self.didExport = YES;
 
-    // 還原 delegate
-    webView.navigationDelegate = self.previousDelegate;
+    NSLog(@"[PDF] didFinishNavigation called, starting PDF generation...");
 
-    NSLog(@"[PDF] didFinishNavigation called OK, webView=%@", webView);
+    [webView createPDFWithConfiguration:[[WKPDFConfiguration alloc] init]
+                      completionHandler:^(NSData *pdfData, NSError *error) {
+        if (error || !pdfData) {
+            NSLog(@"[PDF] createPDF error: %@", error);
+            goExportPDFResult(NULL, [error.localizedDescription UTF8String]);
+        } else {
+            NSError *writeErr = nil;
+            BOOL ok = [pdfData writeToFile:self.savePath options:NSDataWritingAtomic error:&writeErr];
+            if (ok) {
+                NSLog(@"[PDF] saved to %@", self.savePath);
+                goExportPDFResult([self.savePath UTF8String], NULL);
+            } else {
+                NSLog(@"[PDF] write error: %@", writeErr);
+                goExportPDFResult(NULL, [writeErr.localizedDescription UTF8String]);
+            }
+        }
 
-    // 還原原本頁面
-    if (self.originalHTML) {
-        [webView loadHTMLString:self.originalHTML baseURL:nil];
-    }
-
-    goExportPDFResult(NULL, "test - not saving");
+        // 恢復原本的 delegate 與頁面
+        webView.navigationDelegate = self.previousDelegate;
+        if (self.originalHTML) {
+            [webView loadHTMLString:self.originalHTML baseURL:nil];
+        }
+        _pdfDelegate = nil;
+    }];
 }
 
 - (void)webView:(WKWebView *)webView didFailNavigation:(WKNavigation *)navigation withError:(NSError *)error {
@@ -87,11 +104,10 @@ void ExportHTML(const char *htmlUTF8, const char *defaultNameUTF8) {
 
 @end
 
-static PDFExportDelegate *_pdfDelegate = nil;
-
-void ExportPDF(const char *htmlUTF8, const char *defaultNameUTF8, void *windowPtr) {
+void ExportPDF(const char *htmlUTF8, const char *defaultNameUTF8, const char *baseURLUTF8, void *windowPtr) {
     NSString *html = [NSString stringWithUTF8String:htmlUTF8];
     NSString *name = defaultNameUTF8 ? [NSString stringWithUTF8String:defaultNameUTF8] : @"untitled";
+    NSURL *baseURL = baseURLUTF8 ? [NSURL URLWithString:[NSString stringWithUTF8String:baseURLUTF8]] : nil;
 
     dispatch_async(dispatch_get_main_queue(), ^{
         NSWindow *win = (__bridge NSWindow *)windowPtr;
@@ -102,7 +118,7 @@ void ExportPDF(const char *htmlUTF8, const char *defaultNameUTF8, void *windowPt
             return;
         }
 
-        NSLog(@"[PDF] found WKWebView: %@", wv);
+        NSLog(@"[PDF] found WKWebView: %@, baseURL: %@", wv, baseURL);
 
         NSSavePanel *panel = [NSSavePanel savePanel];
         panel.nameFieldStringValue = [name stringByAppendingPathExtension:@"pdf"];
@@ -127,8 +143,8 @@ void ExportPDF(const char *htmlUTF8, const char *defaultNameUTF8, void *windowPt
             NSLog(@"[PDF] got originalHTML length=%lu", (unsigned long)[delegate.originalHTML length]);
             _pdfDelegate = delegate;
             wv.navigationDelegate = delegate;
-            NSLog(@"[PDF] calling loadHTMLString...");
-            [wv loadHTMLString:html baseURL:nil];
+            NSLog(@"[PDF] calling loadHTMLString with baseURL: %@", baseURL);
+            [wv loadHTMLString:html baseURL:baseURL];
             NSLog(@"[PDF] loadHTMLString called");
         }];
     });

@@ -99,6 +99,12 @@ body {
 .markdown-body p { margin-bottom: 1em; }
 .markdown-body a { color: var(--color-accent-fg); text-decoration: none; }
 .markdown-body a:hover { text-decoration: underline; }
+@media print {
+  body { background: white !important; color: black !important; padding: 0 !important; }
+  .markdown-body { max-width: 100% !important; margin: 0 !important; padding: 2cm !important; }
+  .keyboard-hint, .drop-zone, .settings-overlay { display: none !important; }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+}
 .markdown-body code {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
   font-size: 85%;

@@ -8,7 +8,7 @@ package main
 #include <stdint.h>
 
 extern void ExportHTML(const char *htmlUTF8, const char *defaultNameUTF8);
-extern void ExportPDF(const char *htmlUTF8, const char *defaultNameUTF8, void *windowPtr);
+extern void ExportPDF(const char *htmlUTF8, const char *defaultNameUTF8, const char *baseURLUTF8, void *windowPtr);
 */
 import "C"
 import (
@@ -230,4 +230,14 @@ func doExport(label string, callC func(*C.char, *C.char)) {
 }
 
 func exportHTML() { go doExport("ExportHTML", func(cHTML, cName *C.char) { C.ExportHTML(cHTML, cName) }) }
-func exportPDF()  { go doExport("ExportPDF", func(cHTML, cName *C.char) { C.ExportPDF(cHTML, cName, wv.Window()) }) }
+func exportPDF() {
+	go doExport("ExportPDF", func(cHTML, cName *C.char) {
+		baseURL := ""
+		if currentFile != "" && !strings.HasPrefix(currentFile, "(dragged)") {
+			baseURL = "file://" + filepath.Dir(currentFile) + "/"
+		}
+		cBaseURL := C.CString(baseURL)
+		defer C.free(unsafe.Pointer(cBaseURL))
+		C.ExportPDF(cHTML, cName, cBaseURL, wv.Window())
+	})
+}
