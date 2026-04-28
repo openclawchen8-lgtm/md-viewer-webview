@@ -450,24 +450,31 @@ window.initCodeBlocks = function() {
     if (pre.querySelector('.code-copy-btn')) return;
     var btn = document.createElement('button');
     btn.className = 'code-copy-btn';
-    btn.innerText = (window._t && window._t.copy) || 'Copy';
+    btn.innerText = (window._t && window._t.copy) || '複製';
     btn.onclick = function() {
       var code = pre.querySelector('code');
       var text = '';
+      
+      // 優先從 .line-content 抓取，確保不含行號
       var contentSpans = code.querySelectorAll('.line-content');
       if (contentSpans.length > 0) {
-        text = Array.from(contentSpans).map(el => el.innerText).join('\n');
+        text = Array.from(contentSpans).map(function(el) {
+          // 如果是空行，回傳空字串，否則回傳文字
+          return el.textContent === ' ' ? '' : el.textContent;
+        }).join('\n');
       } else {
         text = code.innerText;
       }
-      navigator.clipboard.writeText(text).then(function() {
-        btn.innerText = (window._t && window._t.copied) || 'Copied!';
+      
+      if (window.copyToClipboard) {
+        window.copyToClipboard(text);
+        btn.innerText = (window._t && window._t.copied) || '已複製！';
         btn.classList.add('copied');
         setTimeout(function() {
-          btn.innerText = (window._t && window._t.copy) || 'Copy';
+          btn.innerText = (window._t && window._t.copy) || '複製';
           btn.classList.remove('copied');
         }, 2000);
-      });
+      }
     };
     pre.appendChild(btn);
   });
@@ -1078,6 +1085,21 @@ func main() {
 	wv.Bind("saveLineNumbers", func(show bool) {
 		if err := SetLineNumbers(show); err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to save line numbers config:", err)
+		}
+	})
+	wv.Bind("copyToClipboard", func(text string) {
+		cmd := exec.Command("pbcopy")
+		stdin, err := cmd.StdinPipe()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Clipboard error:", err)
+			return
+		}
+		go func() {
+			defer stdin.Close()
+			fmt.Fprint(stdin, text)
+		}()
+		if err := cmd.Run(); err != nil {
+			fmt.Fprintln(os.Stderr, "pbcopy failed:", err)
 		}
 	})
 
