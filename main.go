@@ -168,18 +168,21 @@ body {
 .code-copy-btn.copied { background: var(--color-success-fg); color: white; border-color: var(--color-success-fg); }
 
 /* 行號樣式 */
-.line-numbers-mode code {
-  display: grid;
-  grid-template-columns: minmax(30px, auto) 1fr;
-  column-gap: 15px;
-}
-.line-number {
+.line-number { display: none; }
+.line-numbers-mode .line-number {
+  display: inline-block;
   color: var(--color-fg-muted);
   text-align: right;
   user-select: none;
   border-right: 1px solid var(--color-border-default);
   padding-right: 10px;
   opacity: 0.5;
+  min-width: 30px;
+}
+.line-numbers-mode code {
+  display: grid;
+  grid-template-columns: minmax(30px, auto) 1fr;
+  column-gap: 15px;
 }
 .markdown-body pre code { background: none; border: none; padding: 0; font-size: 13px; line-height: 1.6; }
 .markdown-body blockquote { border-left: 4px solid var(--color-border-default); padding-left: 1rem; color: var(--color-fg-muted); margin-bottom: 1em; }
@@ -383,13 +386,14 @@ window.applyTheme = function(theme) {
 };
 window.applyLanguage = function(lang) {
   var translations = {
-    'zhTW': { 'settings': '設定', 'theme': '佈景主題', 'zoom': '縮放靈敏度', 'zoomDesc': '控制 ⌘+ 和 ⌘- 每次調整的幅度', 'low': '低', 'mid': '中', 'high': '高', 'font': '字型', 'fontSize': '字型大小', 'lang': '語言 / Language', 'drop': '拖放 .md 檔案到此', 'noFile': '未載入檔案', 'hint': '按 ⌘O 開啟 Markdown 檔案' },
-    'zhCN': { 'settings': '设置', 'theme': '佈景主题', 'zoom': '缩放灵敏度', 'zoomDesc': '控制 ⌘+ 和 ⌘- 每次调整的幅度', 'low': '低', 'mid': '中', 'high': '高', 'font': '字体', 'fontSize': '字体大小', 'lang': '语言 / Language', 'drop': '拖放 .md 文件到此', 'noFile': '未加载文件', 'hint': '按 ⌘O 打开 Markdown 文件' },
-    'en':   { 'settings': 'Settings', 'theme': 'Theme', 'zoom': 'Zoom Sensitivity', 'zoomDesc': 'Control how much ⌘+/- zooms', 'low': 'Low', 'mid': 'Mid', 'high': 'High', 'font': 'Font Family', 'fontSize': 'Font Size', 'lang': 'Language', 'drop': 'Drop .md file here', 'noFile': 'No file loaded', 'hint': 'Press ⌘O to open a Markdown file' },
-    'ja':   { 'settings': '設定', 'theme': 'テーマ', 'zoom': 'ズーム感度', 'zoomDesc': '⌘+/- の調整幅を制御します', 'low': '低', 'mid': '中', 'high': '高', 'font': 'フォント', 'fontSize': 'フォントサイズ', 'lang': '言語 / Language', 'drop': '.md ファイルをここにドロップ', 'noFile': 'ファイルが読み込まれていません', 'hint': '⌘O を押して Markdown ファイルを開く' },
-    'ko':   { 'settings': '설정', 'theme': '테마', 'zoom': '확대/축소 민감도', 'zoomDesc': '⌘+/- 확대/축소 정도를 조절합니다', 'low': '낮음', 'mid': '중간', 'high': '높음', 'font': '글꼴', 'fontSize': '글꼴 크기', 'lang': '언어 / Language', 'drop': '.md 파일을 여기에 드롭', 'noFile': '파일이 로드되지 않음', 'hint': '⌘O를 눌러 Markdown 파일을 엽니다' }
+    'zhTW': { 'settings': '設定', 'theme': '佈景主題', 'zoom': '縮放靈敏度', 'zoomDesc': '控制 ⌘+ 和 ⌘- 每次調整的幅度', 'low': '低', 'mid': '中', 'high': '高', 'font': '字型', 'fontSize': '字型大小', 'lang': '語言 / Language', 'drop': '拖放 .md 檔案到此', 'noFile': '未載入檔案', 'hint': '按 ⌘O 開啟 Markdown 檔案', 'copy': '複製', 'copied': '已複製！' },
+    'zhCN': { 'settings': '设置', 'theme': '佈景主题', 'zoom': '缩放灵敏度', 'zoomDesc': '控制 ⌘+ 和 ⌘- 每次调整的幅度', 'low': '低', 'mid': '中', 'high': '高', 'font': '字体', 'fontSize': '字体大小', 'lang': '语言 / Language', 'drop': '拖放 .md 文件到此', 'noFile': '未加载文件', 'hint': '按 ⌘O 打开 Markdown 文件', 'copy': '复制', 'copied': '已复制！' },
+    'en':   { 'settings': 'Settings', 'theme': 'Theme', 'zoom': 'Zoom Sensitivity', 'zoomDesc': 'Control how much ⌘+/- zooms', 'low': 'Low', 'mid': 'Mid', 'high': 'High', 'font': 'Font Family', 'fontSize': 'Font Size', 'lang': 'Language', 'drop': 'Drop .md file here', 'noFile': 'No file loaded', 'hint': 'Press ⌘O to open a Markdown file', 'copy': 'Copy', 'copied': 'Copied!' },
+    'ja':   { 'settings': '設定', 'theme': 'テーマ', 'zoom': 'ズーム感度', 'zoomDesc': '⌘+/- の調整幅を制御します', 'low': '低', 'mid': '中', 'high': '高', 'font': 'フォント', 'fontSize': 'フォントサイズ', 'lang': '言語 / Language', 'drop': '.md ファイルをここにドロップ', 'noFile': 'ファイルが読み込まれていません', 'hint': '⌘O を押して Markdown ファイルを開く', 'copy': 'コピー', 'copied': 'コピー完了！' },
+    'ko':   { 'settings': '설정', 'theme': '테마', 'zoom': '확대/축소 민감도', 'zoomDesc': '⌘+/- 확대/축소 정도를 조절합니다', 'low': '낮음', 'mid': '중간', 'high': '높음', 'font': '글꼴', 'fontSize': '글꼴 크기', 'lang': '언어 / Language', 'drop': '.md 파일을 여기에 드롭', 'noFile': '파일이 로드되지 않음', 'hint': '⌘O를 눌러 Markdown 파일을 엽니다', 'copy': '복사', 'copied': '복사됨!' }
   };
   var t = translations[lang] || translations['en'];
+  window._t = t;
   // Settings panel
   var sTitle = document.querySelector('.settings-title'); if (sTitle) sTitle.firstChild.textContent = t.settings + ' ';
   var labels = document.querySelectorAll('.setting-label');
@@ -411,6 +415,13 @@ window.applyLanguage = function(lang) {
   var dzMsg = document.querySelector('.drop-zone-msg'); if (dzMsg) dzMsg.textContent = t.drop;
   var esTitle = document.querySelector('.empty-state-title'); if (esTitle) esTitle.textContent = t.noFile;
   var esHint = document.querySelector('.empty-state div:last-child'); if (esHint) esHint.textContent = t.hint;
+  
+  // Update existing copy buttons
+  document.querySelectorAll('.code-copy-btn').forEach(function(btn) {
+    if (!btn.classList.contains('copied')) {
+      btn.innerText = t.copy;
+    }
+  });
 };
 
 window.applyLineNumbers = function(show) {
@@ -1056,11 +1067,17 @@ func main() {
 			fmt.Fprintln(os.Stderr, "Failed to save font:", err)
 		}
 	})
-	wv.Bind("saveLanguage", func(lang string) {		if err := SetLanguage(lang); err != nil {
+	wv.Bind("saveLanguage", func(lang string) {
+		if err := SetLanguage(lang); err != nil {
 			fmt.Fprintln(os.Stderr, "Failed to save language:", err)
 		} else {
 			UpdateMenuLanguage(lang)
 			wv.Eval(getConfigJS())
+		}
+	})
+	wv.Bind("saveLineNumbers", func(show bool) {
+		if err := SetLineNumbers(show); err != nil {
+			fmt.Fprintln(os.Stderr, "Failed to save line numbers config:", err)
 		}
 	})
 
