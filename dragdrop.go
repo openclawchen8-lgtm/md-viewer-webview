@@ -12,12 +12,15 @@ void  ReleaseDragDropOverlay(void* overlay);
 */
 import "C"
 import (
+	"fmt"
+	"os"
 	"unsafe"
 )
 
 //export goDragDropCallback
 func goDragDropCallback(filePath *C.char) {
 	path := C.GoString(filePath)
+	fmt.Fprintf(os.Stderr, "[DragDrop Go] path: %s\n", path)
 	if dragDropCallback != nil {
 		dragDropCallback(path)
 	}

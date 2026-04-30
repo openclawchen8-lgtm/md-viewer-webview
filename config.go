@@ -21,6 +21,7 @@ type Config struct {
 	WindowHeight    int     `json:"windowHeight"`
 	WindowX         int     `json:"windowX"`
 	WindowY         int     `json:"windowY"`
+	LastOpenedFile  string  `json:"lastOpenedFile"`
 }
 
 var currentConfig Config
@@ -135,6 +136,12 @@ func SetWindowSize(width, height int) error {
 func SetWindowPosition(x, y int) error {
 	currentConfig.WindowX = x
 	currentConfig.WindowY = y
+	return saveConfig()
+}
+
+// SetLastOpenedFile updates the last opened file path and persists it.
+func SetLastOpenedFile(path string) error {
+	currentConfig.LastOpenedFile = path
 	return saveConfig()
 }
 

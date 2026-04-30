@@ -557,6 +557,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
   document.addEventListener('dragenter', function(e) {
     e.preventDefault();
+    console.log('[JS dragenter] drag entered');
     lastEnterTarget = e.target;
     dropZone.classList.add('active');
     dropZone.classList.remove('error');
@@ -579,6 +580,7 @@ document.addEventListener('DOMContentLoaded', function() {
   document.addEventListener('drop', function(e) {
     e.preventDefault();
     e.stopPropagation();
+    console.log('[JS drop] drop event fired');
     dropZone.classList.remove('active');
 
     var files = e.dataTransfer.files;
@@ -587,6 +589,7 @@ document.addEventListener('DOMContentLoaded', function() {
       if (fileUrl && fileUrl.indexOf('file://') === 0) {
         var fp = decodeURIComponent(fileUrl.replace('file://', ''));
         if (window.openFileByPath) window.openFileByPath(fp);
+        if (window.setLastOpenedFile) window.setLastOpenedFile(fp);
         return;
       }
       dropZone.classList.add('error');
@@ -930,6 +933,10 @@ func loadFile(path string) {
 
 	currentFile = absPath
 	updateWatcher(absPath)
+	// Save as last opened file
+	if err := SetLastOpenedFile(absPath); err != nil {
+		fmt.Fprintln(os.Stderr, "Failed to save last opened file:", err)
+	}
 	// Keep exportContent in sync for export feature (supports drag-and-drop scenarios)
 	exportContent = string(data)
 	if currentWV == nil {
@@ -972,6 +979,12 @@ func main() {
 		abs, err := filepath.Abs(currentFile)
 		if err == nil {
 			updateWatcher(abs)
+		}
+	} else if currentConfig.LastOpenedFile != "" {
+		// Load last opened file if no command line argument
+		if _, err := os.Stat(currentConfig.LastOpenedFile); err == nil {
+			currentFile = currentConfig.LastOpenedFile
+			updateWatcher(currentFile)
 		}
 	}
 
@@ -1051,16 +1064,13 @@ func main() {
 		wv.Dispatch(func() { loadFile(path) })
 	})
 
-	// Enable native macOS drag & drop (for intra-app drags; Finder→App uses JS HTML5 drop)
+	// Enable native macOS drag & drop
 	RegisterDragDropCallback(func(path string) {
 		wv.Dispatch(func() { loadFile(path) })
 	})
 	windowPtr := wv.Window()
 	if windowPtr != nil {
-		overlay := CreateDragDropOverlay(windowPtr)
-		if overlay != nil {
-			// Keep overlay reference alive (it's retained by the window system)
-		}
+		CreateDragDropOverlay(windowPtr)
 	}
 
 	wv.Bind("openFile",   func() { wv.Dispatch(func(){ openFile() }) })
@@ -1085,6 +1095,11 @@ func main() {
 		if currentWV != nil {
 			currentWV.SetTitle(filename + " - md-viewer")
 			currentWV.SetHtml(renderMD(content))
+		}
+	})
+	wv.Bind("setLastOpenedFile", func(path string) {
+		if path != "" {
+			SetLastOpenedFile(path)
 		}
 	})
 	wv.Bind("saveZoomSensitivity", func(level int) {
