@@ -10,6 +10,9 @@ package main
 extern void goMenuCallback(int menuID);
 void SetupMainMenu(void);
 void UpdateMenuLanguageTitles(const char *lang);
+void SetWindowFrame(void *windowPtr, int x, int y, int width, int height);
+void GetWindowSize(void *windowPtr, int *width, int *height);
+void GetWindowPosition(void *windowPtr, int *x, int *y);
 */
 import "C"
 import (
@@ -68,3 +71,22 @@ func SetupMenu(callback func(int)) {
 
 // Unused dummy — keeps the unsafe import from being stripped by go vet/compiler.
 var _ = unsafe.Pointer(nil)
+
+// SetWindowFrame sets the window position and size, disabling macOS autosave.
+func SetWindowFrame(windowPtr unsafe.Pointer, x, y, width, height int) {
+	C.SetWindowFrame(windowPtr, C.int(x), C.int(y), C.int(width), C.int(height))
+}
+
+// GetWindowSize returns the current window size.
+func GetWindowSize(windowPtr unsafe.Pointer) (width, height int) {
+	var w, h C.int
+	C.GetWindowSize(windowPtr, &w, &h)
+	return int(w), int(h)
+}
+
+// GetWindowPosition returns the current window position.
+func GetWindowPosition(windowPtr unsafe.Pointer) (x, y int) {
+	var xPos, yPos C.int
+	C.GetWindowPosition(windowPtr, &xPos, &yPos)
+	return int(xPos), int(yPos)
+}

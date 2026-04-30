@@ -154,3 +154,40 @@ void SetupMainMenu(void) {
         [(MDAppDelegate *)_sharedDelegate setupMenuWithLang:lang];
     });
 }
+
+// Set window frame (position + size)
+void SetWindowFrame(void *windowPtr, int x, int y, int width, int height) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSWindow *window = (__bridge NSWindow *)windowPtr;
+        if (window) {
+            NSRect frame = NSMakeRect(x, y, width, height);
+            [window setFrame:frame display:YES animate:NO];
+        }
+    });
+}
+
+// Get current window size
+void GetWindowSize(void *windowPtr, int *width, int *height) {
+    NSWindow *window = (__bridge NSWindow *)windowPtr;
+    if (window) {
+        NSRect frame = [window frame];
+        *width = (int)frame.size.width;
+        *height = (int)frame.size.height;
+    } else {
+        *width = 0;
+        *height = 0;
+    }
+}
+
+// Get current window position
+void GetWindowPosition(void *windowPtr, int *x, int *y) {
+    NSWindow *window = (__bridge NSWindow *)windowPtr;
+    if (window) {
+        NSRect frame = [window frame];
+        *x = (int)frame.origin.x;
+        *y = (int)frame.origin.y;
+    } else {
+        *x = 0;
+        *y = 0;
+    }
+}

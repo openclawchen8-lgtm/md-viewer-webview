@@ -772,6 +772,15 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     }
   });
+
+  // Report window size to Go for persistence (on resize only)
+  var _resizeTimer;
+  window.addEventListener('resize', function() {
+    clearTimeout(_resizeTimer);
+    _resizeTimer = setTimeout(function() {
+      // Resize handling is done via Go-side timer
+    }, 500);
+  });
 </script>
 </body>
 </html>`
@@ -1011,7 +1020,31 @@ func main() {
 	})
 
 	wv.SetTitle(title)
-	wv.SetSize(1200, 800, webview.HintNone)
+
+	// Apply saved window size on startup
+	width, height := 1200, 800
+	if currentConfig.WindowWidth > 0 && currentConfig.WindowHeight > 0 {
+		width = currentConfig.WindowWidth
+		height = currentConfig.WindowHeight
+	} else {
+		width = 1200
+		height = 800
+	}
+	wv.SetSize(width, height, webview.HintNone)
+	
+	initialWidth, initialHeight := width, height
+	
+	// Also try to set NSWindow frame for better control (including position)
+	winPtr := wv.Window()
+	if winPtr != nil && currentConfig.WindowWidth > 0 && currentConfig.WindowHeight > 0 {
+		// Use saved position if available, otherwise use current position
+		winX, winY := currentConfig.WindowX, currentConfig.WindowY
+		if winX == 0 && winY == 0 {
+			// No saved position, use current
+			winX, winY = GetWindowPosition(winPtr)
+		}
+		SetWindowFrame(winPtr, winX, winY, width, height)
+	}
 
 	// Handle macOS double-click / open file events
 	RegisterOpenFileCallback(func(path string) {
@@ -1087,6 +1120,12 @@ func main() {
 			fmt.Fprintln(os.Stderr, "Failed to save line numbers config:", err)
 		}
 	})
+	wv.Bind("saveWindowSize", func(width, height int) {
+		fmt.Fprintf(os.Stderr, "[saveWindowSize] width=%d, height=%d\n", width, height)
+		if err := SetWindowSize(width, height); err != nil {
+			fmt.Fprintln(os.Stderr, "Failed to save window size:", err)
+		}
+	})
 	wv.Bind("copyToClipboard", func(text string) {
 		cmd := exec.Command("pbcopy")
 		stdin, err := cmd.StdinPipe()
@@ -1110,6 +1149,34 @@ func main() {
 		wv.SetHtml(renderMD("Loading..."))
 		wv.Dispatch(func() { loadFile(currentFile) })
 	}
+
+	// Use JS resize event to detect user-initiated resizes only
+	// Go-side timer just initializes the last saved values
+	
+	time.AfterFunc(3*time.Second, func() {
+		// Start periodic check from Go side
+		lastSavedW, lastSavedH := initialWidth, initialHeight
+		ticker := time.NewTicker(1 * time.Second)
+		defer ticker.Stop()
+		for {
+			<-ticker.C
+			winPtr := wv.Window()
+			if winPtr != nil {
+				w, h := GetWindowSize(winPtr)
+				winX, winY := GetWindowPosition(winPtr)
+				// Only save if significantly different AND different from initial (user action)
+				if (w != lastSavedW || h != lastSavedH) && (w != initialWidth || h != initialHeight) {
+					deltaW := w - lastSavedW
+					deltaH := h - lastSavedH
+					if deltaW > 30 || deltaW < -30 || deltaH > 30 || deltaH < -30 {
+						SetWindowSize(w, h)
+						SetWindowPosition(winX, winY)
+						lastSavedW, lastSavedH = w, h
+					}
+				}
+			}
+		}
+	})
 
 	wv.Run()
 }

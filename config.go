@@ -17,6 +17,10 @@ type Config struct {
 	FontSize        int     `json:"fontSize"`
 	Language        string  `json:"language"`
 	ShowLineNumbers bool    `json:"showLineNumbers"`
+	WindowWidth     int     `json:"windowWidth"`
+	WindowHeight    int     `json:"windowHeight"`
+	WindowX         int     `json:"windowX"`
+	WindowY         int     `json:"windowY"`
 }
 
 var currentConfig Config
@@ -117,6 +121,20 @@ func SetLanguage(lang string) error {
 // SetLineNumbers updates the show line numbers preference and persists it.
 func SetLineNumbers(show bool) error {
 	currentConfig.ShowLineNumbers = show
+	return saveConfig()
+}
+
+// SetWindowSize updates the window size and persists it.
+func SetWindowSize(width, height int) error {
+	currentConfig.WindowWidth = width
+	currentConfig.WindowHeight = height
+	return saveConfig()
+}
+
+// SetWindowPosition updates the window position and persists it.
+func SetWindowPosition(x, y int) error {
+	currentConfig.WindowX = x
+	currentConfig.WindowY = y
 	return saveConfig()
 }
 
