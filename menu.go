@@ -35,6 +35,7 @@ const (
 	MenuFullscreen    = 11
 	MenuExportHTML    = 12
 	MenuExportPDF     = 13
+	MenuFocusMode     = 14
 )
 
 var menuCallback func(int)

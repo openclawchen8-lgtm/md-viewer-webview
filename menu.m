@@ -46,6 +46,7 @@ void goOpenFileCallback(const char *path);
         @"viewOut":       @[@"Zoom Out", @"縮小", @"缩小", @"縮小", @"축소"],
         @"viewReset":     @[@"Actual Size", @"實際大小", @"实际大小", @"實際のサイズ", @"실제 크기"],
         @"viewFull":      @[@"Toggle Full Screen", @"切換全螢幕", @"切换全屏", @"フルスクリーン切替", @"전체 화면 전환"],
+        @"viewFocus":     @[@"Focus Mode", @"專注模式", @"专注模式", @"集中モード", @"집중 모드"],
         @"helpAbout":     @[@"About md-viewer", @"關於 md-viewer", @"关于 md-viewer", @"md-viewer について", @"md-viewer 정보"],
     };
     NSArray *langs = @[@"en", @"zhTW", @"zhCN", @"ja", @"ko"];
@@ -108,6 +109,10 @@ void goOpenFileCallback(const char *path);
     [viewMenu addItemWithTitle:t(@"viewOut") action:@selector(menuZoomOut) keyEquivalent:@"-"];
     [viewMenu addItemWithTitle:t(@"viewReset") action:@selector(menuZoomReset) keyEquivalent:@"0"];
     [viewMenu addItem:[NSMenuItem separatorItem]];
+    NSMenuItem *focusItem = [[NSMenuItem alloc] initWithTitle:t(@"viewFocus") action:@selector(menuFocusMode) keyEquivalent:@"m"];
+    focusItem.keyEquivalentModifierMask = NSEventModifierFlagCommand | NSEventModifierFlagShift;
+    [viewMenu addItem:focusItem];
+    [viewMenu addItem:[NSMenuItem separatorItem]];
     [viewMenu addItemWithTitle:t(@"viewFull") action:@selector(menuFullscreen) keyEquivalent:@"f"];
     [viewItem setSubmenu:viewMenu];
     [mainMenu addItem:viewItem];
@@ -146,6 +151,10 @@ void goRemoveRecentFileCallback(const char *path);
 - (void)menuZoomReset   { goMenuCallback(8); }
 - (void)menuExportHTML  { goMenuCallback(12); }
 - (void)menuExportPDF   { goMenuCallback(13); }
+- (void)menuFocusMode  { 
+    NSLog(@"menuFocusMode triggered");
+    goMenuCallback(14); 
+}
 - (void)menuFullscreen  {
     NSWindow *window = [NSApp keyWindow];
     if (window && [window respondsToSelector:@selector(toggleFullScreen:)]) {

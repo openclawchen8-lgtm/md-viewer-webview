@@ -196,6 +196,27 @@ body {
 .markdown-body img { max-width: 100%; border-radius: 6px; }
 .markdown-body input[type="checkbox"] { margin-right: 0.5em; accent-color: var(--color-accent-emphasis); }
 .markdown-body del { color: var(--color-fg-muted); }
+.focus-active .focus-high { 
+  background: #ff9900 !important; 
+  border: 3px solid #ff6600 !important;
+  border-radius: 8px;
+  padding: 8px !important;
+  margin: 8px 0 !important;
+}
+.focus-active .focus-dim { 
+  opacity: 0.15 !important; 
+}
+.focus-active .markdown-body { 
+  padding: 20px; 
+}
+.focus-mode .focused { 
+  outline: 3px solid #ff6600 !important;
+  opacity: 1 !important;
+}
+.focus-mode .markdown-body > * { 
+  opacity: 1 !important; 
+  transition: all 0.3s;
+}
 .empty-state { text-align: center; padding: 4rem 2rem; color: var(--color-fg-muted); }
 .empty-state-icon { font-size: 4rem; margin-bottom: 1rem; }
 .empty-state-title { font-size: 1.5rem; font-weight: 600; color: var(--color-fg-default); margin-bottom: 0.5rem; }
@@ -550,6 +571,48 @@ window.zoomIn = function() { window.applyZoomLevel(window.zoomState.level + wind
 window.zoomOut = function() { window.applyZoomLevel(window.zoomState.level - window.zoomState.step); };
 window.zoomReset = function() { window.applyZoomLevel(1.0); };
 
+// Focus Mode
+var focusMode = false;
+window.toggleFocusMode = function() {
+  focusMode = !focusMode;
+  console.log('[FocusMode] Toggle, enabled:', focusMode);
+  console.log('[FocusMode] Body class:', document.body.className);
+  if (focusMode) {
+    document.body.classList.add('focus-mode');
+    window.updateFocusedParagraph();
+    console.log('[FocusMode] After add, body class:', document.body.className);
+  } else {
+    document.body.classList.remove('focus-mode');
+    document.querySelectorAll('.dimmed').forEach(function(el) {
+      el.classList.remove('dimmed');
+    });
+    console.log('[FocusMode] After remove, body class:', document.body.className);
+  }
+};
+window.updateFocusedParagraph = function() {
+  document.querySelectorAll('.dimmed').forEach(function(el) { el.classList.remove('dimmed'); });
+  var viewportCenter = window.scrollY + window.innerHeight / 2;
+  var paragraphs = document.querySelectorAll('.markdown-body > *');
+  var dimmedCount = 0;
+  paragraphs.forEach(function(el) {
+    var rect = el.getBoundingClientRect();
+    var elCenter = window.scrollY + rect.top + rect.height / 2;
+    if (Math.abs(elCenter - viewportCenter) > window.innerHeight * 0.4) {
+      el.classList.add('dimmed');
+      dimmedCount++;
+    }
+  });
+  console.log('[FocusMode] updateFocusedParagraph: dimmed', dimmedCount, 'paragraphs');
+};
+var focusModeScrollHandler = null;
+window.addFocusModeScrollListener = function() {
+  if (focusModeScrollHandler) return;
+  focusModeScrollHandler = debounce(function() {
+    if (focusMode) window.updateFocusedParagraph();
+  }, 100);
+  window.addEventListener('scroll', focusModeScrollHandler);
+};
+
 document.addEventListener('DOMContentLoaded', function() {
   // File drop handling
   var dropZone = document.getElementById('dropZone');
@@ -674,6 +737,16 @@ document.addEventListener('DOMContentLoaded', function() {
   }
   window.initCodeBlocks();
   if (window.hljs) hljs.highlightAll();
+  window.addFocusModeScrollListener();
+  
+  // Keyboard handler for Focus Mode (Cmd+Shift+M)
+  document.addEventListener('keydown', function(e) {
+    if (e.metaKey && e.shiftKey && (e.key === 'm' || e.key === 'M')) {
+      e.preventDefault();
+      console.log('[FocusMode] Toggle via keyboard');
+      window.toggleFocusMode && window.toggleFocusMode();
+    }
+  });
 });
   var themeSelect = document.getElementById('themeSelect');
   if (themeSelect) {
@@ -1032,6 +1105,61 @@ func main() {
 			exportHTML()
 		case MenuExportPDF:
 			exportPDF()
+		case MenuFocusMode:
+			wv.Eval(`
+				(function() {
+					var md = document.querySelector('.markdown-body');
+					if (!md) return;
+					
+					var elements = md.querySelectorAll('p, h1, h2, h3, h4, h5, h6, ul, ol, blockquote, pre, table, li, tr');
+					
+					if (md.classList.contains('focus-active')) {
+						md.classList.remove('focus-active');
+						window.removeEventListener('scroll', md._focusScroll);
+						md._focusScroll = null;
+						for (var i = 0; i < elements.length; i++) {
+							elements[i].classList.remove('focus-high', 'focus-dim');
+						}
+					} else {
+						md.classList.add('focus-active');
+						
+						function update() {
+							var center = window.scrollY + window.innerHeight / 2;
+							var closest = null;
+							var closestDist = Infinity;
+							
+							// 先移除所有 class
+							for (var i = 0; i < elements.length; i++) {
+								elements[i].classList.remove('focus-high', 'focus-dim');
+							}
+							
+							// 找最接近中心的元素
+							for (var i = 0; i < elements.length; i++) {
+								var r = elements[i].getBoundingClientRect();
+								var ec = window.scrollY + r.top + r.height / 2;
+								var dist = Math.abs(ec - center);
+								if (dist < closestDist) {
+									closestDist = dist;
+									closest = i;
+								}
+							}
+							
+							// 高亮最接近的
+							if (closest !== null) {
+								elements[closest].classList.add('focus-high');
+								// 其他都淡化
+								for (var i = 0; i < elements.length; i++) {
+									if (i !== closest) elements[i].classList.add('focus-dim');
+								}
+							}
+						}
+						
+						update();
+						md._focusScroll = update;
+						window.addEventListener('scroll', update, {passive: true});
+					}
+				})();
+			`)
 		}
 	})
 
