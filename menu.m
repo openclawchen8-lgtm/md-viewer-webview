@@ -132,6 +132,14 @@ void goOpenFileCallback(const char *path);
         goOpenFileCallback([path UTF8String]);
     }
 }
+void goRemoveRecentFileCallback(const char *path);
+
+- (void)menuRemoveRecent:(NSMenuItem *)sender {
+    NSString *path = sender.representedObject;
+    if (path) {
+        goRemoveRecentFileCallback([path UTF8String]);
+    }
+}
 - (void)menuQuit        { [NSApp terminate:nil]; }
 - (void)menuZoomIn      { goMenuCallback(6); }
 - (void)menuZoomOut     { goMenuCallback(7); }
@@ -172,34 +180,21 @@ void SetupMainMenu(void) {
 // Update recent files menu
 void UpdateRecentFilesMenu(const char **files, int count) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        NSLog(@"[RecentFiles] Updating with count: %d", count);
         NSMenu *mainMenu = [NSApp mainMenu];
-        if (!mainMenu) {
-            NSLog(@"[RecentFiles] mainMenu is nil");
-            return;
-        }
+        if (!mainMenu) return;
         
-        // Find File menu
         NSArray *items = mainMenu.itemArray;
         NSMenuItem *fileItem = nil;
         for (NSMenuItem *item in items) {
-            NSLog(@"[RecentFiles] Menu item: %@", item.title);
             if ([item.title isEqualToString:@"檔案"] || [item.title isEqualToString:@"File"]) {
                 fileItem = item;
                 break;
             }
         }
-        if (!fileItem) {
-            NSLog(@"[RecentFiles] fileItem not found");
-            return;
-        }
+        if (!fileItem) return;
         NSMenu *fileMenu = fileItem.submenu;
-        if (!fileMenu) {
-            NSLog(@"[RecentFiles] fileMenu is nil");
-            return;
-        }
+        if (!fileMenu) return;
         
-        // Find recent files menu item
         NSMenuItem *recentItem = nil;
         for (int i = 0; i < fileMenu.numberOfItems; i++) {
             NSMenuItem *item = [fileMenu itemAtIndex:i];
@@ -209,26 +204,33 @@ void UpdateRecentFilesMenu(const char **files, int count) {
             }
         }
         
-        if (!recentItem) {
-            NSLog(@"[RecentFiles] recentItem not found");
-            return;
-        }
+        if (!recentItem) return;
         
         NSMenu *recentMenu = recentItem.submenu;
         [recentMenu removeAllItems];
         
         for (int i = 0; i < count; i++) {
             NSString *filePath = [NSString stringWithUTF8String:files[i]];
-            if (!filePath) {
-                NSLog(@"[RecentFiles] Skipping null file at index %d", i);
-                continue;
-            }
+            if (!filePath) continue;
+            
+            BOOL fileExists = [[NSFileManager defaultManager] fileExistsAtPath:filePath];
             NSString *fileName = [filePath lastPathComponent];
-            NSLog(@"[RecentFiles] Adding: %@", fileName);
+            
             NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:fileName 
-                                                           action:@selector(menuOpenRecent:) 
+                                                           action:fileExists ? @selector(menuOpenRecent:) : @selector(menuRemoveRecent:) 
                                                     keyEquivalent:@""];
-            item.representedObject = [filePath copy]; // Copy to keep it
+            item.representedObject = [filePath copy];
+            
+            if (!fileExists) {
+                // File doesn't exist - show as gray but still clickable to remove
+                NSMutableAttributedString *attrTitle = [[NSMutableAttributedString alloc] initWithString:fileName];
+                [attrTitle addAttribute:NSForegroundColorAttributeName 
+                                  value:[NSColor disabledControlTextColor] 
+                                  range:NSMakeRange(0, fileName.length)];
+                item.attributedTitle = attrTitle;
+                item.toolTip = @"檔案不存在，點擊移除";
+            }
+            
             [recentMenu addItem:item];
         }
         

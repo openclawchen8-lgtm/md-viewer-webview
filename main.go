@@ -1066,6 +1066,15 @@ func main() {
 	RegisterOpenFileCallback(func(path string) {
 		wv.Dispatch(func() { loadFile(path) })
 	})
+	
+	// Register callback for removing recent files
+	RegisterRemoveRecentFileCallback(func(path string) {
+		if err := RemoveRecentFile(path); err != nil {
+			fmt.Fprintln(os.Stderr, "Failed to remove recent file:", err)
+		}
+		// Update recent files menu
+		UpdateRecentFiles(currentConfig.RecentFiles)
+	})
 
 	// Enable native macOS drag & drop
 	RegisterDragDropCallback(func(path string) {
@@ -1103,6 +1112,16 @@ func main() {
 	wv.Bind("setLastOpenedFile", func(path string) {
 		if path != "" {
 			SetLastOpenedFile(path)
+		}
+	})
+	wv.Bind("removeRecentFile", func(path string) {
+		if path != "" {
+			if err := RemoveRecentFile(path); err != nil {
+				fmt.Fprintln(os.Stderr, "Failed to remove recent file:", err)
+			} else {
+				// Update the recent files menu
+				UpdateRecentFiles(currentConfig.RecentFiles)
+			}
 		}
 	})
 	wv.Bind("saveZoomSensitivity", func(level int) {

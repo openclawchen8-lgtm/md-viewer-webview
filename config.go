@@ -173,6 +173,18 @@ func GetRecentFiles() []string {
 	return currentConfig.RecentFiles
 }
 
+// RemoveRecentFile removes a file from the recent files list
+func RemoveRecentFile(path string) error {
+	newList := []string{}
+	for _, f := range currentConfig.RecentFiles {
+		if f != path {
+			newList = append(newList, f)
+		}
+	}
+	currentConfig.RecentFiles = newList
+	return saveConfig()
+}
+
 // GetConfig returns a copy of the current config.
 func GetConfig() Config {
 	return currentConfig

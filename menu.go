@@ -39,8 +39,7 @@ const (
 
 var menuCallback func(int)
 var openFileCallback func(string)
-
-// Cache for recent files C strings to prevent garbage collection
+var removeRecentFileCallback func(string)
 var recentFilesCache []*C.char
 
 //export goMenuCallback
@@ -57,9 +56,21 @@ func goOpenFileCallback(path *C.char) {
 	}
 }
 
+//export goRemoveRecentFileCallback
+func goRemoveRecentFileCallback(path *C.char) {
+	if removeRecentFileCallback != nil {
+		removeRecentFileCallback(C.GoString(path))
+	}
+}
+
 // RegisterOpenFileCallback registers a callback for macOS "Open File" events.
 func RegisterOpenFileCallback(callback func(string)) {
 	openFileCallback = callback
+}
+
+// RegisterRemoveRecentFileCallback registers a callback for removing recent files.
+func RegisterRemoveRecentFileCallback(callback func(string)) {
+	removeRecentFileCallback = callback
 }
 
 // SetupMenu registers a callback for menu item clicks and sets up the native NSMenu.
