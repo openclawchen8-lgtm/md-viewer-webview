@@ -571,48 +571,6 @@ window.zoomIn = function() { window.applyZoomLevel(window.zoomState.level + wind
 window.zoomOut = function() { window.applyZoomLevel(window.zoomState.level - window.zoomState.step); };
 window.zoomReset = function() { window.applyZoomLevel(1.0); };
 
-// Focus Mode
-var focusMode = false;
-window.toggleFocusMode = function() {
-  focusMode = !focusMode;
-  console.log('[FocusMode] Toggle, enabled:', focusMode);
-  console.log('[FocusMode] Body class:', document.body.className);
-  if (focusMode) {
-    document.body.classList.add('focus-mode');
-    window.updateFocusedParagraph();
-    console.log('[FocusMode] After add, body class:', document.body.className);
-  } else {
-    document.body.classList.remove('focus-mode');
-    document.querySelectorAll('.dimmed').forEach(function(el) {
-      el.classList.remove('dimmed');
-    });
-    console.log('[FocusMode] After remove, body class:', document.body.className);
-  }
-};
-window.updateFocusedParagraph = function() {
-  document.querySelectorAll('.dimmed').forEach(function(el) { el.classList.remove('dimmed'); });
-  var viewportCenter = window.scrollY + window.innerHeight / 2;
-  var paragraphs = document.querySelectorAll('.markdown-body > *');
-  var dimmedCount = 0;
-  paragraphs.forEach(function(el) {
-    var rect = el.getBoundingClientRect();
-    var elCenter = window.scrollY + rect.top + rect.height / 2;
-    if (Math.abs(elCenter - viewportCenter) > window.innerHeight * 0.4) {
-      el.classList.add('dimmed');
-      dimmedCount++;
-    }
-  });
-  console.log('[FocusMode] updateFocusedParagraph: dimmed', dimmedCount, 'paragraphs');
-};
-var focusModeScrollHandler = null;
-window.addFocusModeScrollListener = function() {
-  if (focusModeScrollHandler) return;
-  focusModeScrollHandler = debounce(function() {
-    if (focusMode) window.updateFocusedParagraph();
-  }, 100);
-  window.addEventListener('scroll', focusModeScrollHandler);
-};
-
 document.addEventListener('DOMContentLoaded', function() {
   // File drop handling
   var dropZone = document.getElementById('dropZone');
@@ -737,16 +695,6 @@ document.addEventListener('DOMContentLoaded', function() {
   }
   window.initCodeBlocks();
   if (window.hljs) hljs.highlightAll();
-  window.addFocusModeScrollListener();
-  
-  // Keyboard handler for Focus Mode (Cmd+Shift+M)
-  document.addEventListener('keydown', function(e) {
-    if (e.metaKey && e.shiftKey && (e.key === 'm' || e.key === 'M')) {
-      e.preventDefault();
-      console.log('[FocusMode] Toggle via keyboard');
-      window.toggleFocusMode && window.toggleFocusMode();
-    }
-  });
 });
   var themeSelect = document.getElementById('themeSelect');
   if (themeSelect) {
@@ -1085,7 +1033,7 @@ func main() {
 	}()
 
 	SetupMenu(func(menuID int) {
-		fmt.Fprintf(os.Stderr, "[MENU] callback fired: menuID=%d\n", menuID)
+		// fmt.Fprintf(os.Stderr, "[MENU] callback fired: menuID=%d\n", menuID)
 		switch menuID {
 		case MenuPreferences:
 			wv.Eval("window.toggleSettingsPanel && window.toggleSettingsPanel()")

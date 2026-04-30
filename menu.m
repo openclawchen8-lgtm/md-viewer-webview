@@ -151,10 +151,7 @@ void goRemoveRecentFileCallback(const char *path);
 - (void)menuZoomReset   { goMenuCallback(8); }
 - (void)menuExportHTML  { goMenuCallback(12); }
 - (void)menuExportPDF   { goMenuCallback(13); }
-- (void)menuFocusMode  { 
-    NSLog(@"menuFocusMode triggered");
-    goMenuCallback(14); 
-}
+- (void)menuFocusMode  { goMenuCallback(14); }
 - (void)menuFullscreen  {
     NSWindow *window = [NSApp keyWindow];
     if (window && [window respondsToSelector:@selector(toggleFullScreen:)]) {
