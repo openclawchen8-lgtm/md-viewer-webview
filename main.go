@@ -937,6 +937,8 @@ func loadFile(path string) {
 	if err := SetLastOpenedFile(absPath); err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to save last opened file:", err)
 	}
+	// Update recent files menu
+	UpdateRecentFiles(currentConfig.RecentFiles)
 	// Keep exportContent in sync for export feature (supports drag-and-drop scenarios)
 	exportContent = string(data)
 	if currentWV == nil {
@@ -973,6 +975,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Failed to load config:", err)
 	}
 	UpdateMenuLanguage(currentConfig.Language)
+	UpdateRecentFiles(currentConfig.RecentFiles)
 
 	if len(os.Args) > 1 {
 		currentFile = os.Args[1]

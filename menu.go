@@ -10,6 +10,7 @@ package main
 extern void goMenuCallback(int menuID);
 void SetupMainMenu(void);
 void UpdateMenuLanguageTitles(const char *lang);
+void UpdateRecentFilesMenu(const char **files, int count);
 void SetWindowFrame(void *windowPtr, int x, int y, int width, int height);
 void GetWindowSize(void *windowPtr, int *width, int *height);
 void GetWindowPosition(void *windowPtr, int *x, int *y);
@@ -39,6 +40,9 @@ const (
 var menuCallback func(int)
 var openFileCallback func(string)
 
+// Cache for recent files C strings to prevent garbage collection
+var recentFilesCache []*C.char
+
 //export goMenuCallback
 func goMenuCallback(menuID C.int) {
 	if menuCallback != nil {
@@ -62,6 +66,25 @@ func RegisterOpenFileCallback(callback func(string)) {
 // UpdateMenuLanguage rebuilds the menu with localized titles.
 func UpdateMenuLanguage(lang string) {
 	C.UpdateMenuLanguageTitles(C.CString(lang))
+}
+
+// UpdateRecentFiles updates the recent files menu with the given file list.
+func UpdateRecentFiles(files []string) {
+	if len(files) == 0 {
+		C.UpdateRecentFilesMenu(nil, 0)
+		return
+	}
+	// Convert to C array
+	cFiles := make([]*C.char, len(files))
+	for i, f := range files {
+		cFiles[i] = C.CString(f)
+	}
+	C.UpdateRecentFilesMenu(&cFiles[0], C.int(len(files)))
+	// Note: C strings are intentionally NOT freed here
+	// They will be copied by Objective-C's stringWithUTF8String
+	// But since we don't use them after this, we need to leak them or fix differently
+	// Actually - let's keep them alive in a slice to prevent GC
+	recentFilesCache = cFiles
 }
 
 func SetupMenu(callback func(int)) {

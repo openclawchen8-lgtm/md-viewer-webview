@@ -81,6 +81,14 @@ void goOpenFileCallback(const char *path);
     [fileMenu addItemWithTitle:t(@"fileOpen") action:@selector(menuOpen) keyEquivalent:@"o"];
     [fileMenu addItemWithTitle:t(@"fileReload") action:@selector(menuReload) keyEquivalent:@"r"];
     [fileMenu addItem:[NSMenuItem separatorItem]];
+    
+    // Recent files submenu
+    NSMenuItem *recentItem = [[NSMenuItem alloc] init];
+    recentItem.title = @"最近開啟";
+    NSMenu *recentMenu = [[NSMenu alloc] init];
+    recentItem.submenu = recentMenu;
+    [fileMenu addItem:recentItem];
+    
     // Export submenu
     NSMenuItem *exportItem = [[NSMenuItem alloc] init];
     [exportItem setTitle:t(@"menuExport")];
@@ -118,6 +126,12 @@ void goOpenFileCallback(const char *path);
 - (void)menuPreferences { goMenuCallback(2); }
 - (void)menuOpen        { goMenuCallback(3); }
 - (void)menuReload     { goMenuCallback(4); }
+- (void)menuOpenRecent:(NSMenuItem *)sender {
+    NSString *path = sender.representedObject;
+    if (path) {
+        goOpenFileCallback([path UTF8String]);
+    }
+}
 - (void)menuQuit        { [NSApp terminate:nil]; }
 - (void)menuZoomIn      { goMenuCallback(6); }
 - (void)menuZoomOut     { goMenuCallback(7); }
@@ -152,6 +166,79 @@ void SetupMainMenu(void) {
         [NSApp setDelegate:_sharedDelegate];
         NSString *lang = currentMenuLang.length > 0 ? currentMenuLang : @"zhTW";
         [(MDAppDelegate *)_sharedDelegate setupMenuWithLang:lang];
+    });
+}
+
+// Update recent files menu
+void UpdateRecentFilesMenu(const char **files, int count) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSLog(@"[RecentFiles] Updating with count: %d", count);
+        NSMenu *mainMenu = [NSApp mainMenu];
+        if (!mainMenu) {
+            NSLog(@"[RecentFiles] mainMenu is nil");
+            return;
+        }
+        
+        // Find File menu
+        NSArray *items = mainMenu.itemArray;
+        NSMenuItem *fileItem = nil;
+        for (NSMenuItem *item in items) {
+            NSLog(@"[RecentFiles] Menu item: %@", item.title);
+            if ([item.title isEqualToString:@"檔案"] || [item.title isEqualToString:@"File"]) {
+                fileItem = item;
+                break;
+            }
+        }
+        if (!fileItem) {
+            NSLog(@"[RecentFiles] fileItem not found");
+            return;
+        }
+        NSMenu *fileMenu = fileItem.submenu;
+        if (!fileMenu) {
+            NSLog(@"[RecentFiles] fileMenu is nil");
+            return;
+        }
+        
+        // Find recent files menu item
+        NSMenuItem *recentItem = nil;
+        for (int i = 0; i < fileMenu.numberOfItems; i++) {
+            NSMenuItem *item = [fileMenu itemAtIndex:i];
+            if ([item.title isEqualToString:@"最近開啟"] || [item.title isEqualToString:@"Open Recent"]) {
+                recentItem = item;
+                break;
+            }
+        }
+        
+        if (!recentItem) {
+            NSLog(@"[RecentFiles] recentItem not found");
+            return;
+        }
+        
+        NSMenu *recentMenu = recentItem.submenu;
+        [recentMenu removeAllItems];
+        
+        for (int i = 0; i < count; i++) {
+            NSString *filePath = [NSString stringWithUTF8String:files[i]];
+            if (!filePath) {
+                NSLog(@"[RecentFiles] Skipping null file at index %d", i);
+                continue;
+            }
+            NSString *fileName = [filePath lastPathComponent];
+            NSLog(@"[RecentFiles] Adding: %@", fileName);
+            NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:fileName 
+                                                           action:@selector(menuOpenRecent:) 
+                                                    keyEquivalent:@""];
+            item.representedObject = [filePath copy]; // Copy to keep it
+            [recentMenu addItem:item];
+        }
+        
+        if (count == 0) {
+            NSMenuItem *emptyItem = [[NSMenuItem alloc] initWithTitle:@"無最近檔案" 
+                                                               action:nil 
+                                                        keyEquivalent:@""];
+            emptyItem.enabled = NO;
+            [recentMenu addItem:emptyItem];
+        }
     });
 }
 

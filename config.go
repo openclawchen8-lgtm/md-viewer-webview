@@ -22,6 +22,7 @@ type Config struct {
 	WindowX         int     `json:"windowX"`
 	WindowY         int     `json:"windowY"`
 	LastOpenedFile  string  `json:"lastOpenedFile"`
+	RecentFiles     []string `json:"recentFiles"`
 }
 
 var currentConfig Config
@@ -142,7 +143,34 @@ func SetWindowPosition(x, y int) error {
 // SetLastOpenedFile updates the last opened file path and persists it.
 func SetLastOpenedFile(path string) error {
 	currentConfig.LastOpenedFile = path
+	// Also add to recent files
+	AddRecentFile(path)
 	return saveConfig()
+}
+
+// AddRecentFile adds a file to the recent files list (max 10)
+func AddRecentFile(path string) {
+	if path == "" {
+		return
+	}
+	// Remove if already exists
+	for i, f := range currentConfig.RecentFiles {
+		if f == path {
+			currentConfig.RecentFiles = append(currentConfig.RecentFiles[:i], currentConfig.RecentFiles[i+1:]...)
+			break
+		}
+	}
+	// Add to front
+	currentConfig.RecentFiles = append([]string{path}, currentConfig.RecentFiles...)
+	// Keep only 10
+	if len(currentConfig.RecentFiles) > 10 {
+		currentConfig.RecentFiles = currentConfig.RecentFiles[:10]
+	}
+}
+
+// GetRecentFiles returns the list of recent files
+func GetRecentFiles() []string {
+	return currentConfig.RecentFiles
 }
 
 // GetConfig returns a copy of the current config.
